@@ -243,28 +243,29 @@ function renderApp() {
 
   app.innerHTML = `
     <div class="app-shell">
-      <aside class="sidebar glass side-actions">
-        <button id="profile-btn" class="profile-dot-btn" title="Профиль">
-          ${cardAvatar(currentProfile?.photoURL, currentProfile?.nickname, true)}
-        </button>
-        <button id="focus-search-btn" class="icon-btn" title="Поиск чатов">Поиск</button>
-        <button id="create-btn" class="icon-btn" title="Создать чат или канал">+</button>
-        <button id="settings-btn" class="icon-btn" title="Настройки мессенджера">Настр.</button>
-      </aside>
-
       <section class="inbox glass">
-        <div class="inbox-head">
+        <button id="profile-btn" class="profile-card mini" title="Открыть профиль">
+          ${cardAvatar(currentProfile?.photoURL, currentProfile?.nickname, true)}
+          <div>
+            <strong>${escapeHtml(currentProfile?.nickname || "User")}</strong>
+            <div class="muted">@${escapeHtml(currentProfile?.torId || "")}</div>
+          </div>
+        </button>
+
+        <div class="inbox-head compact">
           <h2>Чат</h2>
-          <div class="muted top-id">@${escapeHtml(currentProfile?.torId || "")}</div>
+          <div class="muted top-id">${chatsCache.length} dialogs</div>
         </div>
         <div id="chat-list" class="chat-list"></div>
-        <div class="search-box slim">
-          <button id="clear-search-btn" class="icon-btn ghost">x</button>
-          <input id="search-input" placeholder="Поиск">
-          <button id="search-btn" class="icon-btn">o</button>
-          <button id="top-create-chat" class="icon-btn">+</button>
-        </div>
+
         <div id="search-results" class="search-results"></div>
+        <div class="search-box slim controls-bottom">
+          <button id="clear-search-btn" class="icon-btn ghost" title="Очистить поиск">x</button>
+          <input id="search-input" placeholder="Поиск">
+          <button id="search-btn" class="icon-btn" title="Найти">Поиск</button>
+          <button id="create-btn" class="icon-btn" title="Создать чат или канал">+</button>
+          <button id="settings-btn" class="icon-btn" title="Настройки мессенджера">Настр.</button>
+        </div>
       </section>
 
       <main class="center glass">
@@ -281,12 +282,7 @@ function renderApp() {
 
   document.getElementById("profile-btn").onclick = openProfileSettings;
   document.getElementById("settings-btn").onclick = openSettings;
-  document.getElementById("focus-search-btn").onclick = () => {
-    const input = document.getElementById("search-input");
-    input.focus();
-  };
   document.getElementById("create-btn").onclick = openCreateDialogModal;
-  document.getElementById("top-create-chat").onclick = openCreateDialogModal;
   document.getElementById("search-btn").onclick = handleSearch;
   document.getElementById("clear-search-btn").onclick = () => {
     document.getElementById("search-input").value = "";
@@ -295,6 +291,15 @@ function renderApp() {
   document.getElementById("search-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter") handleSearch();
   });
+  document.onkeydown = (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      document.getElementById("search-input")?.focus();
+    }
+    if (e.key === "Escape") {
+      closeModal();
+    }
+  };
 
   document.getElementById("send-form").onsubmit = sendMessage;
 
@@ -323,28 +328,30 @@ function renderChatArea(chat = null, messages = []) {
   sendForm.classList.remove("hidden");
 
   chatArea.innerHTML = `
-    <div class="chat-head">
-      <div class="chat-head-info">
-        ${cardAvatar(chat.photoURL, chat.title, true)}
-        <div>
-          <div><strong>${escapeHtml(chat.title)}</strong></div>
-          <div class="muted">${chat.type === "channel" ? "Канал" : "Личный чат"}</div>
+    <div class="chat-stage">
+      <div class="chat-head">
+        <div class="chat-head-info">
+          ${cardAvatar(chat.photoURL, chat.title, true)}
+          <div>
+            <div><strong>${escapeHtml(chat.title)}</strong></div>
+            <div class="muted">${chat.type === "channel" ? "Канал" : "Личный чат"}</div>
+          </div>
         </div>
+        <div class="muted">${chat.type === "channel" ? (chat.isPublic ? "Public" : "Private") : "Direct"}</div>
       </div>
-      <div class="muted">${chat.type === "channel" ? (chat.isPublic ? "Public" : "Private") : "Direct"}</div>
-    </div>
 
-    <div id="messages-box" class="messages">
-      ${
-        messages.length
-          ? messages.map(msg => `
-            <div class="msg ${msg.senderId === uid() ? "me" : ""}">
-              <div>${escapeHtml(msg.text || "")}</div>
-              <div class="msg-meta">${escapeHtml(msg.senderName || "User")} · ${formatTime(msg.createdAt)}</div>
-            </div>
-          `).join("")
-          : `<div class="empty">Пока сообщений нет. Отправь первое.</div>`
-      }
+      <div id="messages-box" class="messages half">
+        ${
+          messages.length
+            ? messages.map(msg => `
+              <div class="msg ${msg.senderId === uid() ? "me" : ""}">
+                <div>${escapeHtml(msg.text || "")}</div>
+                <div class="msg-meta">${escapeHtml(msg.senderName || "User")} · ${formatTime(msg.createdAt)}</div>
+              </div>
+            `).join("")
+            : `<div class="empty">Пока сообщений нет. Отправь первое.</div>`
+        }
+      </div>
     </div>
   `;
 
@@ -471,8 +478,8 @@ function renderChatList() {
         <span>${escapeHtml(chat.lastMessageText || "Новый чат")}</span>
       </div>
       <div class="chat-actions">
-        <span class="pin-toggle" data-action="pin" data-id="${chat.id}" title="${isPinned(chat.id) ? "Открепить" : "Закрепить"}">${isPinned(chat.id) ? "PIN" : "pin"}</span>
-        <span class="delete-chat" data-action="delete" data-id="${chat.id}" title="Удалить чат">del</span>
+        <button class="pin-toggle" data-action="pin" data-id="${chat.id}" title="${isPinned(chat.id) ? "Открепить" : "Закрепить"}">${isPinned(chat.id) ? "Закр." : "Pin"}</button>
+        <button class="delete-chat" data-action="delete" data-id="${chat.id}" title="Удалить чат">Del</button>
       </div>
     </button>
   `).join("");
