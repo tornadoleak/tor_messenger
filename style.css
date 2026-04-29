@@ -204,6 +204,13 @@ textarea{resize:vertical;min-height:90px}
   margin-bottom:8px;
 }
 
+.profile-dot-btn{
+  background:transparent;
+  border:none;
+  padding:0;
+  cursor:pointer;
+}
+
 .profile-dot .avatar.small{
   width:46px;
   height:46px;
@@ -211,17 +218,19 @@ textarea{resize:vertical;min-height:90px}
 }
 
 .icon-btn{
-  width:42px;
+  min-width:42px;
   height:42px;
-  border-radius:14px;
+  padding:0 10px;
+  border-radius:12px;
   border:1px solid var(--line);
   background:rgba(255,255,255,.06);
   color:var(--text);
   display:grid;
   place-items:center;
-  font-size:16px;
+  font-size:12px;
   line-height:1;
-  font-weight:600;
+  font-weight:700;
+  letter-spacing:.02em;
 }
 
 .icon-btn.ghost{
@@ -398,9 +407,12 @@ textarea{resize:vertical;min-height:90px}
   background:rgba(255,255,255,.035);
   color:var(--text);
   display:grid;
-  grid-template-columns:auto 1fr;
+  grid-template-columns:auto 1fr auto;
   gap:10px;
   align-items:center;
+}
+.chat-main{
+  min-width:0;
 }
 .chat-item.active{
   background:rgba(255,255,255,.11);
@@ -414,6 +426,28 @@ textarea{resize:vertical;min-height:90px}
   white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;
+}
+.chat-actions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.pin-toggle,
+.delete-chat{
+  font-size:11px;
+  color:var(--muted);
+  border:1px solid var(--line);
+  border-radius:9px;
+  padding:5px 7px;
+  transition:.18s ease;
+}
+.pin-toggle:hover{
+  color:var(--text);
+  border-color:rgba(255,255,255,.24);
+}
+.delete-chat:hover{
+  color:#ff9f9f;
+  border-color:rgba(255,122,122,.35);
 }
 
 .modal{
