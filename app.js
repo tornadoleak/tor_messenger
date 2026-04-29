@@ -244,17 +244,25 @@ function renderApp() {
   app.innerHTML = `
     <div class="app-shell">
       <section class="inbox glass">
-        <button id="profile-btn" class="profile-card mini" title="Открыть профиль">
-          ${cardAvatar(currentProfile?.photoURL, currentProfile?.nickname, true)}
-          <div>
-            <strong>${escapeHtml(currentProfile?.nickname || "User")}</strong>
-            <div class="muted">@${escapeHtml(currentProfile?.torId || "")}</div>
+        <button id="profile-btn" class="profile-card mini elevated" title="Открыть профиль">
+          <div class="profile-left">
+            ${cardAvatar(currentProfile?.photoURL, currentProfile?.nickname, true)}
+            <div>
+              <strong>${escapeHtml(currentProfile?.nickname || "User")}</strong>
+              <div class="muted">@${escapeHtml(currentProfile?.torId || "")}</div>
+            </div>
           </div>
+          <span class="pill-tag">Profile</span>
         </button>
 
         <div class="inbox-head compact">
           <h2>Чат</h2>
           <div class="muted top-id">${chatsCache.length} dialogs</div>
+        </div>
+        <div class="chat-filters">
+          <button class="pill-btn active">Все</button>
+          <button class="pill-btn">Личные</button>
+          <button class="pill-btn">Каналы</button>
         </div>
         <div id="chat-list" class="chat-list"></div>
 
@@ -268,11 +276,14 @@ function renderApp() {
         </div>
       </section>
 
-      <main class="center glass">
+      <main class="center glass elevated">
         <div id="chat-area"></div>
         <form id="send-form" class="send-box hidden">
+          <button class="tool-btn" type="button" title="Emoji">☺</button>
+          <button class="tool-btn" type="button" title="Attachment">+</button>
+          <button class="tool-btn" type="button" title="Media">M</button>
           <input id="message-input" placeholder="Напиши сообщение...">
-          <button class="btn primary" type="submit">Send</button>
+          <button class="send-btn" type="submit">Send</button>
         </form>
       </main>
     </div>
@@ -315,10 +326,11 @@ function renderChatArea(chat = null, messages = []) {
   if (!chat) {
     sendForm.classList.add("hidden");
     chatArea.innerHTML = `
-      <div class="empty">
-        <div>
-          <h3 style="margin-top:0">TOR Messenger</h3>
-          <div>Открой чат из списка или создай новый диалог.</div>
+      <div class="empty premium-empty">
+        <div class="empty-orb"></div>
+        <div class="empty-copy">
+          <h3 style="margin-top:0">Select conversation</h3>
+          <div>Выбери диалог слева или создай новый чат, чтобы начать общение.</div>
         </div>
       </div>
     `;
@@ -326,6 +338,23 @@ function renderChatArea(chat = null, messages = []) {
   }
 
   sendForm.classList.remove("hidden");
+  const dayFmt = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long" });
+  let lastDayKey = "";
+  const messagesMarkup = messages.length
+    ? messages.map(msg => {
+      const d = msg.createdAt?.toDate ? msg.createdAt.toDate() : null;
+      const dayKey = d ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : "unknown";
+      const sep = dayKey !== lastDayKey
+        ? `<div class="day-separator"><span>${d ? dayFmt.format(d) : "Now"}</span></div>`
+        : "";
+      lastDayKey = dayKey;
+      return `${sep}
+        <div class="msg ${msg.senderId === uid() ? "me" : ""}">
+          <div>${escapeHtml(msg.text || "")}</div>
+          <div class="msg-meta">${escapeHtml(msg.senderName || "User")} · ${formatTime(msg.createdAt)}</div>
+        </div>`;
+    }).join("")
+    : `<div class="empty inline-empty"><div><h4>No messages yet</h4><p>Начни диалог первым сообщением.</p></div></div>`;
 
   chatArea.innerHTML = `
     <div class="chat-stage">
@@ -334,24 +363,19 @@ function renderChatArea(chat = null, messages = []) {
           ${cardAvatar(chat.photoURL, chat.title, true)}
           <div>
             <div><strong>${escapeHtml(chat.title)}</strong></div>
-            <div class="muted">${chat.type === "channel" ? "Канал" : "Личный чат"}</div>
+            <div class="muted">${chat.type === "channel" ? "Канал" : "Личный чат"} · online now</div>
           </div>
         </div>
-        <div class="muted">${chat.type === "channel" ? (chat.isPublic ? "Public" : "Private") : "Direct"}</div>
+        <div class="head-actions">
+          <span class="muted">${chat.type === "channel" ? (chat.isPublic ? "Public" : "Private") : "Direct"}</span>
+          <button class="tool-btn" type="button" title="Info">i</button>
+        </div>
       </div>
 
       <div id="messages-box" class="messages half">
-        ${
-          messages.length
-            ? messages.map(msg => `
-              <div class="msg ${msg.senderId === uid() ? "me" : ""}">
-                <div>${escapeHtml(msg.text || "")}</div>
-                <div class="msg-meta">${escapeHtml(msg.senderName || "User")} · ${formatTime(msg.createdAt)}</div>
-              </div>
-            `).join("")
-            : `<div class="empty">Пока сообщений нет. Отправь первое.</div>`
-        }
+        ${messagesMarkup}
       </div>
+      <div class="typing-indicator muted">typing indicator · silky motion enabled</div>
     </div>
   `;
 
@@ -389,7 +413,7 @@ function handleSearch() {
   }).slice(0, 8);
 
   if (!users.length && !channels.length) {
-    resultsBox.innerHTML = `<div class="status">Ничего не найдено.</div>`;
+    resultsBox.innerHTML = `<div class="status search-empty">Ничего не найдено. Попробуй другой TOR ID или название канала.</div>`;
     return;
   }
 
@@ -401,7 +425,7 @@ function handleSearch() {
           <strong>${escapeHtml(user.nickname)}</strong>
           <div class="muted">@${escapeHtml(user.torId)}</div>
         </div>
-        <button class="btn small" data-action="dm" data-uid="${user.uid}">Чат</button>
+        <button class="btn small" data-action="dm" data-uid="${user.uid}">Open</button>
       </div>
     `).join("")}
 
@@ -412,7 +436,7 @@ function handleSearch() {
           <strong>${escapeHtml(channel.title)}</strong>
           <div class="muted">Канал</div>
         </div>
-        <button class="btn small" data-action="open-channel" data-id="${channel.id}">Открыть</button>
+        <button class="btn small" data-action="open-channel" data-id="${channel.id}">Open</button>
       </div>
     `).join("")}
   `;
@@ -457,7 +481,7 @@ function renderChatList() {
   if (!list) return;
 
   if (!chatsCache.length) {
-    list.innerHTML = `<div class="status">Пока нет чатов.</div>`;
+    list.innerHTML = `<div class="status">Пока нет чатов. Нажми + чтобы создать первый диалог.</div>`;
     return;
   }
 
@@ -470,12 +494,19 @@ function renderChatList() {
     return bt - at;
   });
 
-  list.innerHTML = sorted.map(chat => `
+  list.innerHTML = sorted.map((chat, index) => `
     <button class="chat-item ${chat.id === currentChatId ? "active" : ""}" data-id="${chat.id}">
       ${cardAvatar(chat.photoURL, chat.title, true)}
       <div class="chat-main">
-        <strong>${escapeHtml(chat.title)}</strong>
+        <div class="chat-title-row">
+          <strong>${escapeHtml(chat.title)}</strong>
+          <span class="chat-time">${formatTime(chat.updatedAt)}</span>
+        </div>
         <span>${escapeHtml(chat.lastMessageText || "Новый чат")}</span>
+        <div class="chat-meta">
+          ${isPinned(chat.id) ? `<span class="tiny-dot pin-dot"></span><span class="meta-label">Pinned</span>` : ""}
+          ${(chat.unreadCount || 0) > 0 ? `<span class="unread-badge">${chat.unreadCount}</span>` : (index < 2 ? `<span class="meta-label">New</span>` : "")}
+        </div>
       </div>
       <div class="chat-actions">
         <button class="pin-toggle" data-action="pin" data-id="${chat.id}" title="${isPinned(chat.id) ? "Открепить" : "Закрепить"}">${isPinned(chat.id) ? "Закр." : "Pin"}</button>
