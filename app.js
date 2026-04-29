@@ -208,56 +208,38 @@ function renderApp() {
 
   app.innerHTML = `
     <div class="app-shell">
-      <aside class="sidebar glass">
-        <div class="profile-card">
-          ${cardAvatar(currentProfile?.photoURL, currentProfile?.nickname)}
-          <div>
-            <div><strong>${escapeHtml(currentProfile?.nickname || "User")}</strong></div>
-            <div class="muted">@${escapeHtml(currentProfile?.torId || "")}</div>
-          </div>
+      <aside class="sidebar glass side-actions">
+        <div class="profile-dot" title="${escapeHtml(currentProfile?.nickname || "User")}">
+          ${cardAvatar(currentProfile?.photoURL, currentProfile?.nickname, true)}
         </div>
+        <button id="create-dm-btn" class="icon-btn" title="Новый чат">+</button>
+        <button id="create-channel-btn" class="icon-btn" title="Новый канал">#</button>
+        <button id="settings-btn" class="icon-btn" title="Настройки">=</button>
+        <button id="logout-btn" class="icon-btn ghost" title="Выйти">x</button>
+      </aside>
 
-        <div class="panel-title">Поиск</div>
-        <div class="search-box">
-          <input id="search-input" placeholder="Ник, TOR ID, канал">
-          <button id="search-btn" class="btn primary">Найти</button>
+      <section class="inbox glass">
+        <div class="inbox-head">
+          <h2>Чат</h2>
+          <div class="muted top-id">@${escapeHtml(currentProfile?.torId || "")}</div>
+        </div>
+        <div id="chat-list" class="chat-list"></div>
+        <div class="search-box slim">
+          <button id="clear-search-btn" class="icon-btn ghost">x</button>
+          <input id="search-input" placeholder="Поиск">
+          <button id="search-btn" class="icon-btn">o</button>
+          <button id="top-create-chat" class="icon-btn">+</button>
         </div>
         <div id="search-results" class="search-results"></div>
-
-        <div class="row">
-          <button id="create-dm-btn" class="btn">Новый чат</button>
-          <button id="create-channel-btn" class="btn">Новый канал</button>
-        </div>
-
-        <button id="settings-btn" class="btn">Настройки</button>
-        <button id="logout-btn" class="btn ghost">Выйти</button>
-      </aside>
+      </section>
 
       <main class="center glass">
-        <div class="topbar">
-          <div>
-            <h2>TOR Messenger</h2>
-            <p>Liquid glass / matte black / smooth motion</p>
-          </div>
-          <div class="topbar-actions">
-            <button id="top-create-chat" class="btn small">Чат</button>
-            <button id="top-create-channel" class="btn small">Канал</button>
-            <button id="top-settings" class="btn small">Настройки</button>
-          </div>
-        </div>
-
         <div id="chat-area"></div>
-
         <form id="send-form" class="send-box hidden">
           <input id="message-input" placeholder="Напиши сообщение...">
-          <button class="btn primary" type="submit">Отправить</button>
+          <button class="btn primary" type="submit">Send</button>
         </form>
       </main>
-
-      <aside class="rightbar glass">
-        <div class="panel-title">Чаты</div>
-        <div id="chat-list" class="chat-list"></div>
-      </aside>
     </div>
 
     <div id="modal-root"></div>
@@ -268,12 +250,14 @@ function renderApp() {
   };
 
   document.getElementById("settings-btn").onclick = openSettings;
-  document.getElementById("top-settings").onclick = openSettings;
   document.getElementById("create-dm-btn").onclick = openCreateChatModal;
   document.getElementById("top-create-chat").onclick = openCreateChatModal;
   document.getElementById("create-channel-btn").onclick = openCreateChannelModal;
-  document.getElementById("top-create-channel").onclick = openCreateChannelModal;
   document.getElementById("search-btn").onclick = handleSearch;
+  document.getElementById("clear-search-btn").onclick = () => {
+    document.getElementById("search-input").value = "";
+    document.getElementById("search-results").innerHTML = "";
+  };
   document.getElementById("search-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter") handleSearch();
   });
@@ -294,8 +278,8 @@ function renderChatArea(chat = null, messages = []) {
     chatArea.innerHTML = `
       <div class="empty">
         <div>
-          <h3 style="margin-top:0">Добро пожаловать в TOR</h3>
-          <div>Выбери чат справа, найди человека слева или создай новый чат / канал.</div>
+          <h3 style="margin-top:0">TOR Messenger</h3>
+          <div>Открой чат из списка или создай новый диалог.</div>
         </div>
       </div>
     `;
@@ -313,7 +297,7 @@ function renderChatArea(chat = null, messages = []) {
           <div class="muted">${chat.type === "channel" ? "Канал" : "Личный чат"}</div>
         </div>
       </div>
-      <div class="muted">${chat.type === "channel" ? (chat.isPublic ? "Публичный" : "Приватный") : "Приватный диалог"}</div>
+      <div class="muted">${chat.type === "channel" ? (chat.isPublic ? "Public" : "Private") : "Direct"}</div>
     </div>
 
     <div id="messages-box" class="messages">
