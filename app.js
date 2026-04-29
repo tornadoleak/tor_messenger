@@ -35,6 +35,8 @@ let channelsCache = [];
 let unsubscribeChats = null;
 let unsubscribeMessages = null;
 let pinnedChatIds = [];
+let activeChatFilter = "all";
+let pendingProfilePhotoURL = "";
 
 function escapeHtml(str = "") {
   return str
@@ -260,9 +262,9 @@ function renderApp() {
           <div class="muted top-id">${chatsCache.length} dialogs</div>
         </div>
         <div class="chat-filters">
-          <button class="pill-btn active">Все</button>
-          <button class="pill-btn">Личные</button>
-          <button class="pill-btn">Каналы</button>
+          <button class="pill-btn ${activeChatFilter === "all" ? "active" : ""}" data-filter="all">Все</button>
+          <button class="pill-btn ${activeChatFilter === "dm" ? "active" : ""}" data-filter="dm">Личные</button>
+          <button class="pill-btn ${activeChatFilter === "channel" ? "active" : ""}" data-filter="channel">Каналы</button>
         </div>
         <div id="chat-list" class="chat-list"></div>
 
@@ -301,6 +303,12 @@ function renderApp() {
   };
   document.getElementById("search-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter") handleSearch();
+  });
+  document.querySelectorAll(".pill-btn[data-filter]").forEach((btn) => {
+    btn.onclick = () => {
+      activeChatFilter = btn.dataset.filter || "all";
+      renderApp();
+    };
   });
   document.getElementById("tool-emoji").onclick = () => insertToMessageInput("🙂");
   document.getElementById("tool-attach").onclick = () => insertToMessageInput("[file]");
@@ -528,12 +536,22 @@ function renderChatList() {
   const list = document.getElementById("chat-list");
   if (!list) return;
 
-  if (!chatsCache.length) {
-    list.innerHTML = `<div class="status">Пока нет чатов. Нажми + чтобы создать первый диалог.</div>`;
+  const filteredChats = chatsCache.filter((chat) => {
+    if (activeChatFilter === "all") return true;
+    return chat.type === activeChatFilter;
+  });
+
+  if (!filteredChats.length) {
+    const emptyText = activeChatFilter === "all"
+      ? "Пока нет чатов. Нажми + чтобы создать первый диалог."
+      : activeChatFilter === "dm"
+        ? "Личных чатов пока нет."
+        : "Каналов пока нет.";
+    list.innerHTML = `<div class="status empty-chats-state">${emptyText}</div>`;
     return;
   }
 
-  const sorted = [...chatsCache].sort((a, b) => {
+  const sorted = [...filteredChats].sort((a, b) => {
     const ap = isPinned(a.id) ? 1 : 0;
     const bp = isPinned(b.id) ? 1 : 0;
     if (ap !== bp) return bp - ap;
@@ -668,7 +686,7 @@ function openCreateDialogModal() {
             </div>
             <div id="channel-fields" class="stack hidden">
               <input id="channel-title" placeholder="Название канала">
-              <input id="channel-photo" placeholder="Ссылка на аватарку канала">
+              <input id="channel-photo-file" type="file" accept="image/*">
               <textarea id="channel-about" placeholder="Описание"></textarea>
               <label class="check"><input id="channel-public" type="checkbox" checked> Публичный канал, виден в поиске</label>
             </div>
@@ -684,6 +702,12 @@ function openCreateDialogModal() {
   const createType = document.getElementById("create-type");
   const dmFields = document.getElementById("dm-fields");
   const channelFields = document.getElementById("channel-fields");
+  let channelPhotoURL = "";
+  document.getElementById("channel-photo-file").onchange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    channelPhotoURL = await fileToDataUrl(file);
+  };
   createType.onchange = () => {
     const isChannel = createType.value === "channel";
     dmFields.classList.toggle("hidden", isChannel);
@@ -705,7 +729,7 @@ function openCreateDialogModal() {
         await createOrOpenDM(user);
       } else {
         const title = document.getElementById("channel-title").value.trim();
-        const photoURL = document.getElementById("channel-photo").value.trim();
+        const photoURL = channelPhotoURL;
         const about = document.getElementById("channel-about").value.trim();
         const isPublic = document.getElementById("channel-public").checked;
         if (!title) throw new Error("Напиши название канала.");
@@ -759,7 +783,7 @@ function openProfileSettings() {
           <div class="stack">
             <input id="set-nickname" value="${escapeHtml(currentProfile?.nickname || "")}" placeholder="Ник">
             <input id="set-torid" value="${escapeHtml(currentProfile?.torId || "")}" placeholder="TOR ID">
-            <input id="set-avatar" value="${escapeHtml(currentProfile?.photoURL || "")}" placeholder="Ссылка на аватарку">
+            <input id="set-avatar-file" type="file" accept="image/*">
             <textarea id="set-bio" placeholder="Описание профиля">${escapeHtml(currentProfile?.bio || "")}</textarea>
             <label class="check"><input id="set-search-name" type="checkbox" ${currentProfile?.privacy?.searchableByNickname !== false ? "checked" : ""}> Можно искать по нику</label>
             <label class="check"><input id="set-search-id" type="checkbox" ${currentProfile?.privacy?.searchableById !== false ? "checked" : ""}> Можно искать по TOR ID</label>
@@ -773,6 +797,12 @@ function openProfileSettings() {
   `;
 
   document.getElementById("close-modal").onclick = closeModal;
+  pendingProfilePhotoURL = currentProfile?.photoURL || "";
+  document.getElementById("set-avatar-file").onchange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    pendingProfilePhotoURL = await fileToDataUrl(file);
+  };
   document.getElementById("save-profile-settings").onclick = saveProfileSettings;
 }
 
@@ -871,7 +901,7 @@ async function saveProfileSettings() {
   try {
     const nickname = document.getElementById("set-nickname").value.trim();
     const torId = normalizeId(document.getElementById("set-torid").value.trim());
-    const photoURL = document.getElementById("set-avatar").value.trim();
+    const photoURL = pendingProfilePhotoURL || "";
     const bio = document.getElementById("set-bio").value.trim();
     const searchableByNickname = document.getElementById("set-search-name").checked;
     const searchableById = document.getElementById("set-search-id").checked;
@@ -915,6 +945,15 @@ async function saveProfileSettings() {
   } catch (err) {
     status.innerHTML = `<span class="danger">${err.message}</span>`;
   }
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 async function removeChat(chat) {
