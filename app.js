@@ -268,22 +268,22 @@ function renderApp() {
 
         <div id="search-results" class="search-results"></div>
         <div class="search-box slim controls-bottom">
-          <button id="clear-search-btn" class="icon-btn ghost" title="Очистить поиск">x</button>
+          <button id="clear-search-btn" class="icon-btn ghost" title="Очистить поиск" aria-label="Очистить поиск">✕</button>
           <input id="search-input" placeholder="Поиск">
-          <button id="search-btn" class="icon-btn" title="Найти">Поиск</button>
-          <button id="create-btn" class="icon-btn" title="Создать чат или канал">+</button>
-          <button id="settings-btn" class="icon-btn" title="Настройки мессенджера">Настр.</button>
+          <button id="search-btn" class="icon-btn" title="Найти" aria-label="Найти">⌕</button>
+          <button id="create-btn" class="icon-btn" title="Создать чат или канал" aria-label="Создать чат или канал">＋</button>
+          <button id="settings-btn" class="icon-btn" title="Настройки мессенджера" aria-label="Настройки мессенджера">⚙</button>
         </div>
       </section>
 
       <main class="center glass elevated">
         <div id="chat-area"></div>
         <form id="send-form" class="send-box hidden">
-          <button class="tool-btn" type="button" title="Emoji">☺</button>
-          <button class="tool-btn" type="button" title="Attachment">+</button>
-          <button class="tool-btn" type="button" title="Media">M</button>
+          <button id="tool-emoji" class="tool-btn" type="button" title="Emoji" aria-label="Emoji">☺</button>
+          <button id="tool-attach" class="tool-btn" type="button" title="Вложение" aria-label="Вложение">📎</button>
+          <button id="tool-media" class="tool-btn" type="button" title="Медиа" aria-label="Медиа">▣</button>
           <input id="message-input" placeholder="Напиши сообщение...">
-          <button class="send-btn" type="submit">Send</button>
+          <button class="send-btn" type="submit">➤</button>
         </form>
       </main>
     </div>
@@ -302,6 +302,9 @@ function renderApp() {
   document.getElementById("search-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter") handleSearch();
   });
+  document.getElementById("tool-emoji").onclick = () => insertToMessageInput("🙂");
+  document.getElementById("tool-attach").onclick = () => insertToMessageInput("[file]");
+  document.getElementById("tool-media").onclick = () => insertToMessageInput("[media]");
   document.onkeydown = (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
       e.preventDefault();
@@ -317,6 +320,14 @@ function renderApp() {
   renderChatArea();
   listenChats();
   prefetchSearchData();
+}
+
+function insertToMessageInput(text) {
+  const input = document.getElementById("message-input");
+  if (!input) return;
+  const current = input.value || "";
+  input.value = `${current}${current ? " " : ""}${text}`.trimStart();
+  input.focus();
 }
 
 function renderChatArea(chat = null, messages = []) {
@@ -368,7 +379,7 @@ function renderChatArea(chat = null, messages = []) {
         </div>
         <div class="head-actions">
           <span class="muted">${chat.type === "channel" ? (chat.isPublic ? "Public" : "Private") : "Direct"}</span>
-          <button class="tool-btn" type="button" title="Info">i</button>
+          <button id="chat-info-btn" class="tool-btn" type="button" title="Info">i</button>
         </div>
       </div>
 
@@ -381,6 +392,43 @@ function renderChatArea(chat = null, messages = []) {
 
   const box = document.getElementById("messages-box");
   box.scrollTop = box.scrollHeight;
+  document.getElementById("chat-info-btn").onclick = () => openChatInfoModal(chat);
+}
+
+function openChatInfoModal(chat) {
+  const modalRoot = document.getElementById("modal-root");
+  if (!modalRoot) return;
+  modalRoot.innerHTML = `
+    <div class="modal">
+      <div class="modal-card glass">
+        <div class="modal-head">
+          <h2 style="margin:0">Информация о чате</h2>
+          <button id="close-modal" class="btn small">Закрыть</button>
+        </div>
+        <div class="block">
+          <div class="stack">
+            <div><strong>${escapeHtml(chat.title)}</strong></div>
+            <div class="muted">Тип: ${chat.type === "channel" ? "Канал" : "Личный чат"}</div>
+            <div class="muted">Видимость: ${chat.type === "channel" ? (chat.isPublic ? "Публичный" : "Приватный") : "Приватный диалог"}</div>
+            <div class="row">
+              <button id="chat-info-pin" class="btn">${isPinned(chat.id) ? "Открепить" : "Закрепить"}</button>
+              <button id="chat-info-delete" class="btn ghost">Удалить чат</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("close-modal").onclick = closeModal;
+  document.getElementById("chat-info-pin").onclick = () => {
+    togglePinned(chat.id);
+    closeModal();
+  };
+  document.getElementById("chat-info-delete").onclick = async () => {
+    await removeChat(chat);
+    closeModal();
+  };
 }
 
 async function prefetchSearchData() {
@@ -509,8 +557,8 @@ function renderChatList() {
         </div>
       </div>
       <div class="chat-actions">
-        <button class="pin-toggle" data-action="pin" data-id="${chat.id}" title="${isPinned(chat.id) ? "Открепить" : "Закрепить"}">${isPinned(chat.id) ? "Закр." : "Pin"}</button>
-        <button class="delete-chat" data-action="delete" data-id="${chat.id}" title="Удалить чат">Del</button>
+        <button class="pin-toggle" data-action="pin" data-id="${chat.id}" title="${isPinned(chat.id) ? "Открепить" : "Закрепить"}" aria-label="${isPinned(chat.id) ? "Открепить" : "Закрепить"}">📌</button>
+        <button class="delete-chat" data-action="delete" data-id="${chat.id}" title="Удалить чат" aria-label="Удалить чат">🗑</button>
       </div>
     </button>
   `).join("");
