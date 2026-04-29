@@ -37,6 +37,26 @@ let unsubscribeMessages = null;
 let pinnedChatIds = [];
 let activeChatFilter = "all";
 let pendingProfilePhotoURL = "";
+const AI_BOTS = [
+  {
+    id: "oracle",
+    name: "Oracle",
+    avatar: "",
+    about: "Аналитик трендов и стратегий."
+  },
+  {
+    id: "nova",
+    name: "Nova",
+    avatar: "",
+    about: "Креативный ассистент по идеям и контенту."
+  },
+  {
+    id: "cipher",
+    name: "Cipher",
+    avatar: "",
+    about: "Тех-бот для кода и инфраструктуры."
+  }
+];
 
 function escapeHtml(str = "") {
   return str
@@ -86,6 +106,19 @@ function bodyTheme(theme) {
 
 function getSavedTheme() {
   return localStorage.getItem("tor_theme") || "dark";
+}
+
+function getAiApiKey() {
+  return localStorage.getItem("tor_ai_api_key") || "";
+}
+
+function setAiApiKey(value) {
+  localStorage.setItem("tor_ai_api_key", value.trim());
+}
+
+function pickRecommendedBot() {
+  const idx = Math.floor(Math.random() * AI_BOTS.length);
+  return AI_BOTS[idx];
 }
 
 function getPinnedStorageKey() {
@@ -267,6 +300,7 @@ function renderApp() {
           <button class="pill-btn ${activeChatFilter === "channel" ? "active" : ""}" data-filter="channel">Каналы</button>
         </div>
         <div id="chat-list" class="chat-list"></div>
+        <div id="ai-recommendation" class="status ai-recommendation"></div>
 
         <div id="search-results" class="search-results"></div>
         <div class="search-box slim controls-bottom">
@@ -328,6 +362,7 @@ function renderApp() {
   renderChatArea();
   listenChats();
   prefetchSearchData();
+  renderAiRecommendation();
 }
 
 function insertToMessageInput(text) {
@@ -406,6 +441,7 @@ function renderChatArea(chat = null, messages = []) {
 function openChatInfoModal(chat) {
   const modalRoot = document.getElementById("modal-root");
   if (!modalRoot) return;
+  const canEditChannel = chat.type === "channel" && chat.createdBy === uid();
   modalRoot.innerHTML = `
     <div class="modal">
       <div class="modal-card glass">
@@ -418,6 +454,21 @@ function openChatInfoModal(chat) {
             <div><strong>${escapeHtml(chat.title)}</strong></div>
             <div class="muted">Тип: ${chat.type === "channel" ? "Канал" : "Личный чат"}</div>
             <div class="muted">Видимость: ${chat.type === "channel" ? (chat.isPublic ? "Публичный" : "Приватный") : "Приватный диалог"}</div>
+            ${
+              canEditChannel
+                ? `
+                <div class="block" style="margin-top:8px">
+                  <div class="stack">
+                    <div><strong>Редактирование канала</strong></div>
+                    <input id="edit-channel-title" value="${escapeHtml(chat.title || "")}" placeholder="Новое название канала">
+                    <input id="edit-channel-photo-file" type="file" accept="image/*">
+                    <button id="save-channel-edit" class="btn primary">Сохранить канал</button>
+                    <div id="edit-channel-status" class="status">Можно изменить название и аватар канала.</div>
+                  </div>
+                </div>
+              `
+                : ""
+            }
             <div class="row">
               <button id="chat-info-pin" class="btn">${isPinned(chat.id) ? "Открепить" : "Закрепить"}</button>
               <button id="chat-info-delete" class="btn ghost">Удалить чат</button>
@@ -437,6 +488,155 @@ function openChatInfoModal(chat) {
     await removeChat(chat);
     closeModal();
   };
+
+  if (canEditChannel) {
+    let newPhotoURL = chat.photoURL || "";
+    document.getElementById("edit-channel-photo-file").onchange = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      newPhotoURL = await fileToDataUrl(file);
+    };
+    document.getElementById("save-channel-edit").onclick = async () => {
+      const status = document.getElementById("edit-channel-status");
+      try {
+        const newTitle = document.getElementById("edit-channel-title").value.trim();
+        if (!newTitle) throw new Error("Название канала не может быть пустым.");
+        await updateDoc(doc(db, "chats", chat.id), {
+          title: newTitle,
+          photoURL: newPhotoURL || "",
+          searchTitle: newTitle.toLowerCase(),
+          updatedAt: serverTimestamp()
+        });
+        status.innerHTML = `<span class="success">Канал обновлён.</span>`;
+      } catch (err) {
+        status.innerHTML = `<span class="danger">${err.message}</span>`;
+      }
+    };
+  }
+}
+
+function renderAiRecommendation() {
+  const box = document.getElementById("ai-recommendation");
+  if (!box) return;
+  const bot = pickRecommendedBot();
+  box.innerHTML = `
+    <div class="ai-rec-title">Рекомендуется</div>
+    <div class="ai-rec-sub">AI-канал и AI-чат от ${escapeHtml(bot.name)}</div>
+    <div class="row" style="margin-top:8px">
+      <button id="open-ai-chat-rec" class="btn small">AI чат</button>
+      <button id="open-ai-channel-rec" class="btn small">AI канал</button>
+    </div>
+  `;
+  document.getElementById("open-ai-chat-rec").onclick = async () => {
+    await openOrCreateAiChat(bot);
+  };
+  document.getElementById("open-ai-channel-rec").onclick = async () => {
+    await openOrCreateAiChannel(bot);
+  };
+}
+
+async function openOrCreateAiChat(bot) {
+  const aiParticipantId = `ai_${bot.id}`;
+  const existing = chatsCache.find(chat =>
+    chat.type === "dm" &&
+    Array.isArray(chat.participants) &&
+    chat.participants.includes(uid()) &&
+    chat.participants.includes(aiParticipantId)
+  );
+  if (existing) {
+    openChat(existing);
+    return;
+  }
+
+  const ref = await addDoc(collection(db, "chats"), {
+    type: "dm",
+    title: `${bot.name} AI`,
+    photoURL: bot.avatar || "",
+    aiBotId: bot.id,
+    createdBy: uid(),
+    participants: [uid(), aiParticipantId],
+    searchTitle: `${bot.name} ai`.toLowerCase(),
+    isPublic: false,
+    lastMessageText: "AI ready",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+
+  openChat({
+    id: ref.id,
+    type: "dm",
+    title: `${bot.name} AI`,
+    photoURL: bot.avatar || "",
+    aiBotId: bot.id,
+    participants: [uid(), aiParticipantId],
+    lastMessageText: "AI ready"
+  });
+}
+
+async function openOrCreateAiChannel(bot) {
+  const existing = chatsCache.find(chat => chat.type === "channel" && chat.aiBotId === bot.id);
+  if (existing) {
+    openChat(existing);
+    return;
+  }
+
+  const ref = await addDoc(collection(db, "chats"), {
+    type: "channel",
+    title: `${bot.name} • AI Feed`,
+    photoURL: bot.avatar || "",
+    aiBotId: bot.id,
+    createdBy: uid(),
+    participants: [uid()],
+    searchTitle: `${bot.name} ai feed`.toLowerCase(),
+    isPublic: true,
+    lastMessageText: "AI channel launched",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+
+  await addDoc(collection(db, "chats", ref.id, "messages"), {
+    text: `Привет! Я ${bot.name}. В этом канале я публикую короткие инсайты.`,
+    senderId: `ai_${bot.id}`,
+    senderName: `${bot.name} AI`,
+    createdAt: serverTimestamp()
+  });
+  await addDoc(collection(db, "chats", ref.id, "messages"), {
+    text: "Nova AI: Поддерживаю, можно делать мини-дайджесты каждые 2-3 часа.",
+    senderId: "ai_nova",
+    senderName: "Nova AI",
+    createdAt: serverTimestamp()
+  });
+
+  openChat({
+    id: ref.id,
+    type: "channel",
+    title: `${bot.name} • AI Feed`,
+    photoURL: bot.avatar || "",
+    aiBotId: bot.id,
+    isPublic: true,
+    participants: [uid()],
+    lastMessageText: "AI channel launched"
+  });
+}
+
+async function generateAiReply(botId, userText) {
+  const apiKey = getAiApiKey();
+  if (!apiKey) return "AI ключ не настроен. Добавь ключ в настройках TOR, и я буду отвечать полноценно.";
+  try {
+    const prompt = `Ты AI-бот в мессенджере. Отвечай кратко, дружелюбно, по-русски. Твой id: ${botId}. Сообщение пользователя: ${userText}`;
+    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }]
+      })
+    });
+    if (!resp.ok) throw new Error("ai_error");
+    const data = await resp.json();
+    return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "Я получил сообщение, но сейчас ответил слишком кратко.";
+  } catch {
+    return "Сервис AI временно недоступен. Попробуй чуть позже.";
+  }
 }
 
 async function prefetchSearchData() {
@@ -573,10 +773,10 @@ function renderChatList() {
           ${isPinned(chat.id) ? `<span class="tiny-dot pin-dot"></span><span class="meta-label">Pinned</span>` : ""}
           ${(chat.unreadCount || 0) > 0 ? `<span class="unread-badge">${chat.unreadCount}</span>` : (index < 2 ? `<span class="meta-label">New</span>` : "")}
         </div>
-      </div>
-      <div class="chat-actions">
-        <button class="pin-toggle" data-action="pin" data-id="${chat.id}" title="${isPinned(chat.id) ? "Открепить" : "Закрепить"}" aria-label="${isPinned(chat.id) ? "Открепить" : "Закрепить"}">📌</button>
-        <button class="delete-chat" data-action="delete" data-id="${chat.id}" title="Удалить чат" aria-label="Удалить чат">🗑</button>
+        <div class="chat-actions">
+          <button class="pin-toggle" data-action="pin" data-id="${chat.id}" title="${isPinned(chat.id) ? "Открепить" : "Закрепить"}" aria-label="${isPinned(chat.id) ? "Открепить" : "Закрепить"}">📌</button>
+          <button class="delete-chat" data-action="delete" data-id="${chat.id}" title="Удалить чат" aria-label="Удалить чат">🗑</button>
+        </div>
       </div>
     </button>
   `).join("");
@@ -828,6 +1028,7 @@ function openSettings() {
               <label class="check"><input id="set-liquid" type="checkbox" ${currentProfile?.preferences?.liquidGlass !== false ? "checked" : ""}> Liquid glass эффект</label>
               <label class="check"><input id="set-anim" type="checkbox" ${currentProfile?.preferences?.smoothAnimations !== false ? "checked" : ""}> Плавные анимации</label>
               <label class="check"><input id="set-compact" type="checkbox" ${currentProfile?.preferences?.compactMode ? "checked" : ""}> Компактный режим</label>
+              <input id="set-ai-key" value="${escapeHtml(getAiApiKey())}" placeholder="AI API key (локально)">
             </div>
           </div>
 
@@ -861,6 +1062,7 @@ async function saveSettings() {
     const liquidGlass = document.getElementById("set-liquid").checked;
     const smoothAnimations = document.getElementById("set-anim").checked;
     const compactMode = document.getElementById("set-compact").checked;
+    const aiKey = document.getElementById("set-ai-key").value.trim();
 
     await updateDoc(doc(db, "users", uid()), {
       theme,
@@ -888,6 +1090,7 @@ async function saveSettings() {
     };
 
     bodyTheme(theme);
+    setAiApiKey(aiKey);
     renderApp();
     status.innerHTML = `<span class="success">Сохранено.</span>`;
     closeModal();
@@ -999,6 +1202,20 @@ async function sendMessage(e) {
     lastMessageText: text.slice(0, 120),
     updatedAt: serverTimestamp()
   });
+
+  if (currentChat?.aiBotId) {
+    const aiText = await generateAiReply(currentChat.aiBotId, text);
+    await addDoc(collection(db, "chats", currentChatId, "messages"), {
+      text: aiText,
+      senderId: `ai_${currentChat.aiBotId}`,
+      senderName: `${currentChat.title}`,
+      createdAt: serverTimestamp()
+    });
+    await updateDoc(doc(db, "chats", currentChatId), {
+      lastMessageText: aiText.slice(0, 120),
+      updatedAt: serverTimestamp()
+    });
+  }
 
   input.value = "";
 }
