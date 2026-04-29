@@ -102,6 +102,19 @@ textarea{resize:vertical;min-height:90px}
   margin-top:12px;padding:10px 12px;border-radius:12px;
   background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--muted)
 }
+.ai-recommendation{
+  margin-top:6px;
+}
+.ai-rec-title{
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--muted);
+}
+.ai-rec-sub{
+  margin-top:4px;
+  font-size:12px;
+}
 .app-shell{
   display:grid;
   grid-template-columns:minmax(330px,390px) 1fr;
@@ -157,7 +170,7 @@ textarea{resize:vertical;min-height:90px}
   width:100%;text-align:left;color:var(--text);
   border-radius:14px;border:1px solid rgba(235,235,235,.14);
   background:linear-gradient(170deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
-  padding:10px;display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;
+  padding:10px;display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center;
 }
 .chat-item:hover{border-color:rgba(240,240,240,.24);background:linear-gradient(170deg, rgba(255,255,255,.09), rgba(255,255,255,.03))}
 .chat-item.active{
@@ -183,9 +196,9 @@ textarea{resize:vertical;min-height:90px}
   font-size:10px;font-weight:700;
   background:rgba(185,185,185,.25);border:1px solid rgba(220,220,220,.34);color:#f5f5f5;
 }
-.chat-actions{display:flex;align-items:center;gap:6px}
+.chat-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:8px}
 .pin-toggle,.delete-chat{
-  width:24px;height:24px;border-radius:8px;padding:0;font-size:12px;line-height:1;
+  width:30px;height:30px;border-radius:10px;padding:0;font-size:14px;line-height:1;
   border:1px solid var(--line);background:rgba(255,255,255,.03);color:var(--muted);
   display:grid;place-items:center;
 }
