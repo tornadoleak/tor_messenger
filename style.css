@@ -185,8 +185,9 @@ textarea{resize:vertical;min-height:90px}
 }
 .chat-actions{display:flex;align-items:center;gap:6px}
 .pin-toggle,.delete-chat{
-  border-radius:8px;padding:4px 7px;font-size:10px;
+  width:24px;height:24px;border-radius:8px;padding:0;font-size:12px;line-height:1;
   border:1px solid var(--line);background:rgba(255,255,255,.03);color:var(--muted);
+  display:grid;place-items:center;
 }
 .pin-toggle:hover{color:var(--text);border-color:var(--line-strong)}
 .delete-chat:hover{color:#ffd2d2;border-color:rgba(255,145,145,.45)}
@@ -200,10 +201,12 @@ textarea{resize:vertical;min-height:90px}
 .search-box{display:flex;gap:8px}
 .controls-bottom{padding-top:2px}
 .icon-btn{
-  min-width:36px;height:36px;border-radius:11px;
+  min-width:36px;width:36px;height:36px;border-radius:11px;
   border:1px solid var(--line);
   background:rgba(255,255,255,.06);color:var(--text);
-  font-size:11px;font-weight:700;padding:0 9px;display:grid;place-items:center;
+  font-size:14px;font-weight:600;padding:0;display:grid;place-items:center;
+  line-height:1;
+  white-space:nowrap;
 }
 .icon-btn.ghost{background:transparent}
 .search-box input{
@@ -263,17 +266,18 @@ textarea{resize:vertical;min-height:90px}
 .tool-btn{
   width:32px;height:32px;border-radius:10px;
   border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--muted);
-  display:grid;place-items:center;font-size:12px;
+  display:grid;place-items:center;font-size:13px;
 }
 .tool-btn:hover{color:var(--text);border-color:var(--line-strong)}
 .send-box input{
   border:none;background:transparent;padding:4px 6px;height:32px;
 }
 .send-btn{
-  height:34px;border-radius:999px;padding:0 14px;
+  width:36px;height:34px;border-radius:999px;padding:0;
   border:1px solid rgba(160,190,255,.45);
   background:linear-gradient(150deg, rgba(137,170,248,.45), rgba(137,170,248,.18));
-  color:#edf3ff;font-weight:600;
+  color:#edf3ff;font-weight:700;font-size:14px;
+  display:grid;place-items:center;
 }
 .send-btn:hover{box-shadow:0 8px 24px rgba(76,110,184,.4)}
 .empty{min-height:100%;display:grid;place-items:center;text-align:center;color:var(--muted);padding:24px}
