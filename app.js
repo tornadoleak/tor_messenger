@@ -16,6 +16,7 @@ import {
   getDocs,
   addDoc,
   updateDoc,
+  deleteDoc,
   serverTimestamp,
   query,
   where,
@@ -33,6 +34,7 @@ let usersCache = [];
 let channelsCache = [];
 let unsubscribeChats = null;
 let unsubscribeMessages = null;
+let pinnedChatIds = [];
 
 function escapeHtml(str = "") {
   return str
@@ -82,6 +84,38 @@ function bodyTheme(theme) {
 
 function getSavedTheme() {
   return localStorage.getItem("tor_theme") || "dark";
+}
+
+function getPinnedStorageKey() {
+  return `tor_pinned_${uid()}`;
+}
+
+function loadPinnedChats() {
+  try {
+    const raw = localStorage.getItem(getPinnedStorageKey()) || "[]";
+    const parsed = JSON.parse(raw);
+    pinnedChatIds = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    pinnedChatIds = [];
+  }
+}
+
+function savePinnedChats() {
+  localStorage.setItem(getPinnedStorageKey(), JSON.stringify(pinnedChatIds));
+}
+
+function isPinned(chatId) {
+  return pinnedChatIds.includes(chatId);
+}
+
+function togglePinned(chatId) {
+  if (isPinned(chatId)) {
+    pinnedChatIds = pinnedChatIds.filter(id => id !== chatId);
+  } else {
+    pinnedChatIds.unshift(chatId);
+  }
+  savePinnedChats();
+  renderChatList();
 }
 
 function cardAvatar(photoURL, name, small = false) {
@@ -205,17 +239,17 @@ async function isTorIdFree(torId, exceptUid = "") {
 
 function renderApp() {
   bodyTheme(currentProfile?.theme || getSavedTheme());
+  loadPinnedChats();
 
   app.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar glass side-actions">
-        <div class="profile-dot" title="${escapeHtml(currentProfile?.nickname || "User")}">
+        <button id="profile-btn" class="profile-dot-btn" title="Профиль">
           ${cardAvatar(currentProfile?.photoURL, currentProfile?.nickname, true)}
-        </div>
-        <button id="create-dm-btn" class="icon-btn" title="Новый чат">+</button>
-        <button id="create-channel-btn" class="icon-btn" title="Новый канал">#</button>
-        <button id="settings-btn" class="icon-btn" title="Настройки">=</button>
-        <button id="logout-btn" class="icon-btn ghost" title="Выйти">x</button>
+        </button>
+        <button id="focus-search-btn" class="icon-btn" title="Поиск чатов">Поиск</button>
+        <button id="create-btn" class="icon-btn" title="Создать чат или канал">+</button>
+        <button id="settings-btn" class="icon-btn" title="Настройки мессенджера">Настр.</button>
       </aside>
 
       <section class="inbox glass">
@@ -245,14 +279,14 @@ function renderApp() {
     <div id="modal-root"></div>
   `;
 
-  document.getElementById("logout-btn").onclick = async () => {
-    await signOut(auth);
-  };
-
+  document.getElementById("profile-btn").onclick = openProfileSettings;
   document.getElementById("settings-btn").onclick = openSettings;
-  document.getElementById("create-dm-btn").onclick = openCreateChatModal;
-  document.getElementById("top-create-chat").onclick = openCreateChatModal;
-  document.getElementById("create-channel-btn").onclick = openCreateChannelModal;
+  document.getElementById("focus-search-btn").onclick = () => {
+    const input = document.getElementById("search-input");
+    input.focus();
+  };
+  document.getElementById("create-btn").onclick = openCreateDialogModal;
+  document.getElementById("top-create-chat").onclick = openCreateDialogModal;
   document.getElementById("search-btn").onclick = handleSearch;
   document.getElementById("clear-search-btn").onclick = () => {
     document.getElementById("search-input").value = "";
@@ -420,12 +454,25 @@ function renderChatList() {
     return;
   }
 
-  list.innerHTML = chatsCache.map(chat => `
+  const sorted = [...chatsCache].sort((a, b) => {
+    const ap = isPinned(a.id) ? 1 : 0;
+    const bp = isPinned(b.id) ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+    const at = a.updatedAt?.seconds || 0;
+    const bt = b.updatedAt?.seconds || 0;
+    return bt - at;
+  });
+
+  list.innerHTML = sorted.map(chat => `
     <button class="chat-item ${chat.id === currentChatId ? "active" : ""}" data-id="${chat.id}">
       ${cardAvatar(chat.photoURL, chat.title, true)}
-      <div>
+      <div class="chat-main">
         <strong>${escapeHtml(chat.title)}</strong>
         <span>${escapeHtml(chat.lastMessageText || "Новый чат")}</span>
+      </div>
+      <div class="chat-actions">
+        <span class="pin-toggle" data-action="pin" data-id="${chat.id}" title="${isPinned(chat.id) ? "Открепить" : "Закрепить"}">${isPinned(chat.id) ? "PIN" : "pin"}</span>
+        <span class="delete-chat" data-action="delete" data-id="${chat.id}" title="Удалить чат">del</span>
       </div>
     </button>
   `).join("");
@@ -434,6 +481,21 @@ function renderChatList() {
     btn.onclick = () => {
       const chat = chatsCache.find(c => c.id === btn.dataset.id);
       if (chat) openChat(chat);
+    };
+  });
+
+  list.querySelectorAll("[data-action='pin']").forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      togglePinned(el.dataset.id);
+    };
+  });
+
+  list.querySelectorAll("[data-action='delete']").forEach(el => {
+    el.onclick = async (e) => {
+      e.stopPropagation();
+      const chat = chatsCache.find(c => c.id === el.dataset.id);
+      if (chat) await removeChat(chat);
     };
   });
 }
@@ -496,20 +558,36 @@ async function createOrOpenDM(user) {
 }
 
 function openCreateChatModal() {
+  openCreateDialogModal();
+}
+
+function openCreateDialogModal() {
   const modalRoot = document.getElementById("modal-root");
   modalRoot.innerHTML = `
     <div class="modal">
       <div class="modal-card glass">
         <div class="modal-head">
-          <h2 style="margin:0">Новый личный чат</h2>
+          <h2 style="margin:0">Создать</h2>
           <button id="close-modal" class="btn small">Закрыть</button>
         </div>
         <div class="block">
           <div class="stack">
-            <div class="muted">Введи TOR ID пользователя</div>
-            <input id="dm-id" placeholder="например tornado_777">
-            <button id="create-dm-confirm" class="btn primary">Создать чат</button>
-            <div id="dm-status" class="status">Пользователь должен разрешать личные сообщения.</div>
+            <select id="create-type">
+              <option value="dm">Личный чат</option>
+              <option value="channel">Канал</option>
+            </select>
+            <div id="dm-fields" class="stack">
+              <div class="muted">Введи TOR ID пользователя</div>
+              <input id="dm-id" placeholder="например tornado_777">
+            </div>
+            <div id="channel-fields" class="stack hidden">
+              <input id="channel-title" placeholder="Название канала">
+              <input id="channel-photo" placeholder="Ссылка на аватарку канала">
+              <textarea id="channel-about" placeholder="Описание"></textarea>
+              <label class="check"><input id="channel-public" type="checkbox" checked> Публичный канал, виден в поиске</label>
+            </div>
+            <button id="create-unified-confirm" class="btn primary">Создать</button>
+            <div id="dm-status" class="status">Создание диалога или канала в одном окне.</div>
           </div>
         </div>
       </div>
@@ -517,53 +595,91 @@ function openCreateChatModal() {
   `;
 
   document.getElementById("close-modal").onclick = closeModal;
-  document.getElementById("create-dm-confirm").onclick = async () => {
+  const createType = document.getElementById("create-type");
+  const dmFields = document.getElementById("dm-fields");
+  const channelFields = document.getElementById("channel-fields");
+  createType.onchange = () => {
+    const isChannel = createType.value === "channel";
+    dmFields.classList.toggle("hidden", isChannel);
+    channelFields.classList.toggle("hidden", !isChannel);
+  };
+
+  document.getElementById("create-unified-confirm").onclick = async () => {
     const status = document.getElementById("dm-status");
-    const torId = normalizeId(document.getElementById("dm-id").value.trim());
-    if (!torId) {
-      status.innerHTML = `<span class="danger">Введи TOR ID.</span>`;
-      return;
-    }
+    try {
+      if (createType.value === "dm") {
+        const torId = normalizeId(document.getElementById("dm-id").value.trim());
+        if (!torId) throw new Error("Введи TOR ID.");
 
-    const snap = await getDocs(query(collection(db, "users"), where("torId", "==", torId)));
-    if (snap.empty) {
-      status.innerHTML = `<span class="danger">Пользователь не найден.</span>`;
-      return;
-    }
+        const snap = await getDocs(query(collection(db, "users"), where("torId", "==", torId)));
+        if (snap.empty) throw new Error("Пользователь не найден.");
+        const user = snap.docs[0].data();
+        if (user.uid === uid()) throw new Error("Нельзя создать чат с собой.");
+        if (user.privacy?.allowDirectMessages === false) throw new Error("Этот пользователь запретил личные сообщения.");
+        await createOrOpenDM(user);
+      } else {
+        const title = document.getElementById("channel-title").value.trim();
+        const photoURL = document.getElementById("channel-photo").value.trim();
+        const about = document.getElementById("channel-about").value.trim();
+        const isPublic = document.getElementById("channel-public").checked;
+        if (!title) throw new Error("Напиши название канала.");
 
-    const user = snap.docs[0].data();
-    if (user.uid === uid()) {
-      status.innerHTML = `<span class="danger">Нельзя создать чат с собой.</span>`;
-      return;
-    }
+        const ref = await addDoc(collection(db, "chats"), {
+          type: "channel",
+          title,
+          photoURL,
+          about,
+          createdBy: uid(),
+          participants: [uid()],
+          searchTitle: title.toLowerCase(),
+          isPublic,
+          lastMessageText: "",
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
 
-    if (user.privacy?.allowDirectMessages === false) {
-      status.innerHTML = `<span class="danger">Этот пользователь запретил личные сообщения.</span>`;
-      return;
+        await prefetchSearchData();
+        openChat({
+          id: ref.id,
+          type: "channel",
+          title,
+          photoURL,
+          about,
+          createdBy: uid(),
+          participants: [uid()],
+          searchTitle: title.toLowerCase(),
+          isPublic,
+          lastMessageText: ""
+        });
+      }
+      closeModal();
+    } catch (err) {
+      status.innerHTML = `<span class="danger">${err.message}</span>`;
     }
-
-    await createOrOpenDM(user);
-    closeModal();
   };
 }
 
-function openCreateChannelModal() {
+function openProfileSettings() {
   const modalRoot = document.getElementById("modal-root");
   modalRoot.innerHTML = `
     <div class="modal">
       <div class="modal-card glass">
         <div class="modal-head">
-          <h2 style="margin:0">Создать канал</h2>
+          <h2 style="margin:0">Профиль</h2>
           <button id="close-modal" class="btn small">Закрыть</button>
         </div>
+
         <div class="block">
           <div class="stack">
-            <input id="channel-title" placeholder="Название канала">
-            <input id="channel-photo" placeholder="Ссылка на аватарку канала">
-            <textarea id="channel-about" placeholder="Описание"></textarea>
-            <label class="check"><input id="channel-public" type="checkbox" checked> Публичный канал, виден в поиске</label>
-            <button id="create-channel-confirm" class="btn primary">Создать канал</button>
-            <div id="channel-status" class="status">Ты будешь владельцем канала.</div>
+            <input id="set-nickname" value="${escapeHtml(currentProfile?.nickname || "")}" placeholder="Ник">
+            <input id="set-torid" value="${escapeHtml(currentProfile?.torId || "")}" placeholder="TOR ID">
+            <input id="set-avatar" value="${escapeHtml(currentProfile?.photoURL || "")}" placeholder="Ссылка на аватарку">
+            <textarea id="set-bio" placeholder="Описание профиля">${escapeHtml(currentProfile?.bio || "")}</textarea>
+            <label class="check"><input id="set-search-name" type="checkbox" ${currentProfile?.privacy?.searchableByNickname !== false ? "checked" : ""}> Можно искать по нику</label>
+            <label class="check"><input id="set-search-id" type="checkbox" ${currentProfile?.privacy?.searchableById !== false ? "checked" : ""}> Можно искать по TOR ID</label>
+            <label class="check"><input id="set-dm" type="checkbox" ${currentProfile?.privacy?.allowDirectMessages !== false ? "checked" : ""}> Разрешить личные сообщения</label>
+            <button id="save-profile-settings" class="btn primary">Сохранить профиль</button>
+            <div id="profile-status" class="status">Здесь меняется только профиль аккаунта.</div>
           </div>
         </div>
       </div>
@@ -571,47 +687,7 @@ function openCreateChannelModal() {
   `;
 
   document.getElementById("close-modal").onclick = closeModal;
-  document.getElementById("create-channel-confirm").onclick = async () => {
-    const status = document.getElementById("channel-status");
-    const title = document.getElementById("channel-title").value.trim();
-    const photoURL = document.getElementById("channel-photo").value.trim();
-    const about = document.getElementById("channel-about").value.trim();
-    const isPublic = document.getElementById("channel-public").checked;
-
-    if (!title) {
-      status.innerHTML = `<span class="danger">Напиши название канала.</span>`;
-      return;
-    }
-
-    const ref = await addDoc(collection(db, "chats"), {
-      type: "channel",
-      title,
-      photoURL,
-      about,
-      createdBy: uid(),
-      participants: [uid()],
-      searchTitle: title.toLowerCase(),
-      isPublic,
-      lastMessageText: "",
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-
-    closeModal();
-    await prefetchSearchData();
-    openChat({
-      id: ref.id,
-      type: "channel",
-      title,
-      photoURL,
-      about,
-      createdBy: uid(),
-      participants: [uid()],
-      searchTitle: title.toLowerCase(),
-      isPublic,
-      lastMessageText: ""
-    });
-  };
+  document.getElementById("save-profile-settings").onclick = saveProfileSettings;
 }
 
 function openSettings() {
@@ -625,16 +701,6 @@ function openSettings() {
         </div>
 
         <div class="grid-2">
-          <div class="block">
-            <h3>Профиль</h3>
-            <div class="stack">
-              <input id="set-nickname" value="${escapeHtml(currentProfile?.nickname || "")}" placeholder="Ник">
-              <input id="set-torid" value="${escapeHtml(currentProfile?.torId || "")}" placeholder="TOR ID">
-              <input id="set-avatar" value="${escapeHtml(currentProfile?.photoURL || "")}" placeholder="Ссылка на аватарку">
-              <textarea id="set-bio" placeholder="О себе">${escapeHtml(currentProfile?.bio || "")}</textarea>
-            </div>
-          </div>
-
           <div class="block">
             <h3>Тема и интерфейс</h3>
             <div class="stack">
@@ -650,21 +716,12 @@ function openSettings() {
           </div>
 
           <div class="block">
-            <h3>Приватность</h3>
-            <div class="stack">
-              <label class="check"><input id="set-search-name" type="checkbox" ${currentProfile?.privacy?.searchableByNickname !== false ? "checked" : ""}> Можно искать по нику</label>
-              <label class="check"><input id="set-search-id" type="checkbox" ${currentProfile?.privacy?.searchableById !== false ? "checked" : ""}> Можно искать по TOR ID</label>
-              <label class="check"><input id="set-dm" type="checkbox" ${currentProfile?.privacy?.allowDirectMessages !== false ? "checked" : ""}> Разрешить личные сообщения</label>
-              <label class="check"><input id="set-show-email" type="checkbox" ${currentProfile?.privacy?.showEmail ? "checked" : ""}> Показывать email в профиле</label>
-            </div>
-          </div>
-
-          <div class="block">
             <h3>Дополнительно</h3>
             <div class="stack">
-              <div class="status">Что я добавил от себя:</div>
-              <div class="muted">• compact mode<br>• отключение анимаций<br>• скрытие поиска по нику / id<br>• запрет личных сообщений</div>
-              <button id="save-settings" class="btn primary">Сохранить</button>
+              <div class="status">Минимальные тест-настройки клиента.</div>
+              <label class="check"><input id="set-show-email" type="checkbox" ${currentProfile?.privacy?.showEmail ? "checked" : ""}> Показывать email в профиле</label>
+              <button id="save-settings" class="btn primary">Сохранить настройки</button>
+              <button id="logout-from-settings" class="btn ghost">Выйти из аккаунта</button>
               <div id="settings-status" class="status">Сохрани изменения.</div>
             </div>
           </div>
@@ -675,40 +732,24 @@ function openSettings() {
 
   document.getElementById("close-modal").onclick = closeModal;
   document.getElementById("save-settings").onclick = saveSettings;
+  document.getElementById("logout-from-settings").onclick = async () => {
+    await signOut(auth);
+  };
 }
 
 async function saveSettings() {
   const status = document.getElementById("settings-status");
   try {
-    const nickname = document.getElementById("set-nickname").value.trim();
-    const torId = normalizeId(document.getElementById("set-torid").value.trim());
-    const photoURL = document.getElementById("set-avatar").value.trim();
-    const bio = document.getElementById("set-bio").value.trim();
     const theme = document.getElementById("set-theme").value;
-    const searchableByNickname = document.getElementById("set-search-name").checked;
-    const searchableById = document.getElementById("set-search-id").checked;
-    const allowDirectMessages = document.getElementById("set-dm").checked;
     const showEmail = document.getElementById("set-show-email").checked;
     const liquidGlass = document.getElementById("set-liquid").checked;
     const smoothAnimations = document.getElementById("set-anim").checked;
     const compactMode = document.getElementById("set-compact").checked;
 
-    if (!nickname) throw new Error("Ник не может быть пустым.");
-    if (!torId) throw new Error("TOR ID не может быть пустым.");
-
-    const free = await isTorIdFree(torId, uid());
-    if (!free) throw new Error("Этот TOR ID уже занят.");
-
     await updateDoc(doc(db, "users", uid()), {
-      nickname,
-      torId,
-      photoURL,
-      bio,
       theme,
       privacy: {
-        searchableByNickname,
-        searchableById,
-        allowDirectMessages,
+        ...(currentProfile?.privacy || {}),
         showEmail
       },
       preferences: {
@@ -721,17 +762,8 @@ async function saveSettings() {
 
     currentProfile = {
       ...currentProfile,
-      nickname,
-      torId,
-      photoURL,
-      bio,
       theme,
-      privacy: {
-        searchableByNickname,
-        searchableById,
-        allowDirectMessages,
-        showEmail
-      },
+      privacy: { ...(currentProfile?.privacy || {}), showEmail },
       preferences: {
         liquidGlass,
         smoothAnimations,
@@ -745,6 +777,78 @@ async function saveSettings() {
     closeModal();
   } catch (err) {
     status.innerHTML = `<span class="danger">${err.message}</span>`;
+  }
+}
+
+async function saveProfileSettings() {
+  const status = document.getElementById("profile-status");
+  try {
+    const nickname = document.getElementById("set-nickname").value.trim();
+    const torId = normalizeId(document.getElementById("set-torid").value.trim());
+    const photoURL = document.getElementById("set-avatar").value.trim();
+    const bio = document.getElementById("set-bio").value.trim();
+    const searchableByNickname = document.getElementById("set-search-name").checked;
+    const searchableById = document.getElementById("set-search-id").checked;
+    const allowDirectMessages = document.getElementById("set-dm").checked;
+
+    if (!nickname) throw new Error("Ник не может быть пустым.");
+    if (!torId) throw new Error("TOR ID не может быть пустым.");
+    const free = await isTorIdFree(torId, uid());
+    if (!free) throw new Error("Этот TOR ID уже занят.");
+
+    await updateDoc(doc(db, "users", uid()), {
+      nickname,
+      torId,
+      photoURL,
+      bio,
+      privacy: {
+        ...(currentProfile?.privacy || {}),
+        searchableByNickname,
+        searchableById,
+        allowDirectMessages
+      },
+      updatedAt: serverTimestamp()
+    });
+
+    currentProfile = {
+      ...currentProfile,
+      nickname,
+      torId,
+      photoURL,
+      bio,
+      privacy: {
+        ...(currentProfile?.privacy || {}),
+        searchableByNickname,
+        searchableById,
+        allowDirectMessages
+      }
+    };
+
+    renderApp();
+    closeModal();
+  } catch (err) {
+    status.innerHTML = `<span class="danger">${err.message}</span>`;
+  }
+}
+
+async function removeChat(chat) {
+  const ok = window.confirm(`Удалить чат "${chat.title}" из списка?`);
+  if (!ok) return;
+
+  const nextParticipants = (chat.participants || []).filter(id => id !== uid());
+  if (nextParticipants.length === 0) {
+    await deleteDoc(doc(db, "chats", chat.id));
+  } else {
+    await updateDoc(doc(db, "chats", chat.id), {
+      participants: nextParticipants,
+      updatedAt: serverTimestamp()
+    });
+  }
+
+  if (chat.id === currentChatId) {
+    currentChatId = null;
+    if (unsubscribeMessages) unsubscribeMessages();
+    renderChatArea();
   }
 }
 
