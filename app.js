@@ -160,6 +160,64 @@ function cardAvatar(photoURL, name, small = false) {
   return `<div class="avatar ${small ? "small" : ""}">${escapeHtml(initials(name))}</div>`;
 }
 
+function ChatItem(chat, isActive, index) {
+  return `
+    <button class="chat-item ${isActive ? "active" : ""}" data-id="${chat.id}">
+      ${cardAvatar(chat.photoURL, chat.title, true)}
+      <div class="chat-main">
+        <div class="chat-title-row">
+          <strong>${escapeHtml(chat.title)}</strong>
+          <span class="chat-time">${formatTime(chat.updatedAt)}</span>
+        </div>
+        <span>${escapeHtml(chat.lastMessageText || "Новый чат")}</span>
+        <div class="chat-meta">
+          ${isPinned(chat.id) ? `<span class="tiny-dot pin-dot"></span><span class="meta-label">Pinned</span>` : ""}
+          ${(chat.unreadCount || 0) > 0 ? `<span class="unread-badge">${chat.unreadCount}</span>` : (index < 2 ? `<span class="meta-label">New</span>` : "")}
+        </div>
+      </div>
+    </button>
+  `;
+}
+
+function MessageBubble(msg) {
+  return `
+    <div class="msg ${msg.senderId === uid() ? "me" : ""}">
+      <div>${escapeHtml(msg.text || "")}</div>
+      <div class="msg-meta">${escapeHtml(msg.senderName || "User")} · ${formatTime(msg.createdAt)}</div>
+    </div>
+  `;
+}
+
+function HeaderBar(chat) {
+  return `
+    <div class="chat-head">
+      <div class="chat-head-info">
+        ${cardAvatar(chat.photoURL, chat.title, true)}
+        <div>
+          <div><strong>${escapeHtml(chat.title)}</strong></div>
+          <div class="muted">${chat.type === "channel" ? "Канал" : "Личный чат"} · online now</div>
+        </div>
+      </div>
+      <div class="head-actions">
+        <span class="muted">${chat.type === "channel" ? (chat.isPublic ? "Public" : "Private") : "Direct"}</span>
+        <button id="chat-info-btn" class="tool-btn" type="button" title="Info">i</button>
+      </div>
+    </div>
+  `;
+}
+
+function InputBar() {
+  return `
+    <form id="send-form" class="send-box hidden">
+      <button id="tool-emoji" class="tool-btn" type="button" title="Emoji" aria-label="Emoji">☺</button>
+      <button id="tool-attach" class="tool-btn" type="button" title="Вложение" aria-label="Вложение">📎</button>
+      <button id="tool-media" class="tool-btn" type="button" title="Медиа" aria-label="Медиа">▣</button>
+      <input id="message-input" placeholder="Напиши сообщение...">
+      <button class="send-btn" type="submit">➤</button>
+    </form>
+  `;
+}
+
 function showAuth(mode = "login", message = "") {
   app.innerHTML = `
     <div class="auth-wrap">
@@ -278,49 +336,49 @@ function renderApp() {
 
   app.innerHTML = `
     <div class="app-shell">
-      <section class="inbox glass">
-        <button id="profile-btn" class="profile-card mini elevated" title="Открыть профиль">
-          <div class="profile-left">
-            ${cardAvatar(currentProfile?.photoURL, currentProfile?.nickname, true)}
-            <div>
-              <strong>${escapeHtml(currentProfile?.nickname || "User")}</strong>
-              <div class="muted">@${escapeHtml(currentProfile?.torId || "")}</div>
+      <aside class="inbox glass">
+        <div class="sidebar-top">
+          <button id="profile-btn" class="profile-card mini elevated" title="Открыть профиль">
+            <div class="profile-left">
+              ${cardAvatar(currentProfile?.photoURL, currentProfile?.nickname, true)}
+              <div>
+                <strong>${escapeHtml(currentProfile?.nickname || "User")}</strong>
+                <div class="muted">@${escapeHtml(currentProfile?.torId || "")}</div>
+              </div>
             </div>
+            <span class="pill-tag">Profile</span>
+          </button>
+
+          <div class="inbox-head compact">
+            <h2>Chats</h2>
+            <div class="muted top-id">${chatsCache.length} dialogs</div>
           </div>
-          <span class="pill-tag">Profile</span>
-        </button>
 
-        <div class="inbox-head compact">
-          <h2>Чат</h2>
-          <div class="muted top-id">${chatsCache.length} dialogs</div>
+          <div class="search-box slim controls-bottom">
+            <button id="clear-search-btn" class="icon-btn ghost" title="Очистить поиск" aria-label="Очистить поиск">✕</button>
+            <input id="search-input" placeholder="Поиск чатов и каналов">
+            <button id="search-btn" class="icon-btn" title="Найти" aria-label="Найти">⌕</button>
+          </div>
+
+          <div class="chat-filters">
+            <button class="pill-btn ${activeChatFilter === "all" ? "active" : ""}" data-filter="all">Все</button>
+            <button class="pill-btn ${activeChatFilter === "dm" ? "active" : ""}" data-filter="dm">Личные</button>
+            <button class="pill-btn ${activeChatFilter === "channel" ? "active" : ""}" data-filter="channel">Каналы</button>
+          </div>
         </div>
-        <div class="chat-filters">
-          <button class="pill-btn ${activeChatFilter === "all" ? "active" : ""}" data-filter="all">Все</button>
-          <button class="pill-btn ${activeChatFilter === "dm" ? "active" : ""}" data-filter="dm">Личные</button>
-          <button class="pill-btn ${activeChatFilter === "channel" ? "active" : ""}" data-filter="channel">Каналы</button>
-        </div>
+
         <div id="chat-list" class="chat-list"></div>
-        <div id="ai-recommendation" class="status ai-recommendation"></div>
-
         <div id="search-results" class="search-results"></div>
-        <div class="search-box slim controls-bottom">
-          <button id="clear-search-btn" class="icon-btn ghost" title="Очистить поиск" aria-label="Очистить поиск">✕</button>
-          <input id="search-input" placeholder="Поиск">
-          <button id="search-btn" class="icon-btn" title="Найти" aria-label="Найти">⌕</button>
+        <div class="sidebar-actions">
           <button id="create-btn" class="icon-btn" title="Создать чат или канал" aria-label="Создать чат или канал">＋</button>
           <button id="settings-btn" class="icon-btn" title="Настройки мессенджера" aria-label="Настройки мессенджера">⚙</button>
         </div>
-      </section>
+        <div id="ai-recommendation" class="status ai-recommendation"></div>
+      </aside>
 
       <main class="center glass elevated">
         <div id="chat-area"></div>
-        <form id="send-form" class="send-box hidden">
-          <button id="tool-emoji" class="tool-btn" type="button" title="Emoji" aria-label="Emoji">☺</button>
-          <button id="tool-attach" class="tool-btn" type="button" title="Вложение" aria-label="Вложение">📎</button>
-          <button id="tool-media" class="tool-btn" type="button" title="Медиа" aria-label="Медиа">▣</button>
-          <input id="message-input" placeholder="Напиши сообщение...">
-          <button class="send-btn" type="submit">➤</button>
-        </form>
+        ${InputBar()}
       </main>
     </div>
 
@@ -402,29 +460,13 @@ function renderChatArea(chat = null, messages = []) {
         ? `<div class="day-separator"><span>${d ? dayFmt.format(d) : "Now"}</span></div>`
         : "";
       lastDayKey = dayKey;
-      return `${sep}
-        <div class="msg ${msg.senderId === uid() ? "me" : ""}">
-          <div>${escapeHtml(msg.text || "")}</div>
-          <div class="msg-meta">${escapeHtml(msg.senderName || "User")} · ${formatTime(msg.createdAt)}</div>
-        </div>`;
+      return `${sep}${MessageBubble(msg)}`;
     }).join("")
     : `<div class="empty inline-empty"><div><h4>No messages yet</h4><p>Начни диалог первым сообщением.</p></div></div>`;
 
   chatArea.innerHTML = `
     <div class="chat-stage">
-      <div class="chat-head">
-        <div class="chat-head-info">
-          ${cardAvatar(chat.photoURL, chat.title, true)}
-          <div>
-            <div><strong>${escapeHtml(chat.title)}</strong></div>
-            <div class="muted">${chat.type === "channel" ? "Канал" : "Личный чат"} · online now</div>
-          </div>
-        </div>
-        <div class="head-actions">
-          <span class="muted">${chat.type === "channel" ? (chat.isPublic ? "Public" : "Private") : "Direct"}</span>
-          <button id="chat-info-btn" class="tool-btn" type="button" title="Info">i</button>
-        </div>
-      </div>
+      ${HeaderBar(chat)}
 
       <div id="messages-box" class="messages half">
         ${messagesMarkup}
@@ -760,26 +802,7 @@ function renderChatList() {
     return bt - at;
   });
 
-  list.innerHTML = sorted.map((chat, index) => `
-    <button class="chat-item ${chat.id === currentChatId ? "active" : ""}" data-id="${chat.id}">
-      ${cardAvatar(chat.photoURL, chat.title, true)}
-      <div class="chat-main">
-        <div class="chat-title-row">
-          <strong>${escapeHtml(chat.title)}</strong>
-          <span class="chat-time">${formatTime(chat.updatedAt)}</span>
-        </div>
-        <span>${escapeHtml(chat.lastMessageText || "Новый чат")}</span>
-        <div class="chat-meta">
-          ${isPinned(chat.id) ? `<span class="tiny-dot pin-dot"></span><span class="meta-label">Pinned</span>` : ""}
-          ${(chat.unreadCount || 0) > 0 ? `<span class="unread-badge">${chat.unreadCount}</span>` : (index < 2 ? `<span class="meta-label">New</span>` : "")}
-        </div>
-        <div class="chat-actions">
-          <button class="pin-toggle" data-action="pin" data-id="${chat.id}" title="${isPinned(chat.id) ? "Открепить" : "Закрепить"}" aria-label="${isPinned(chat.id) ? "Открепить" : "Закрепить"}">📌</button>
-          <button class="delete-chat" data-action="delete" data-id="${chat.id}" title="Удалить чат" aria-label="Удалить чат">🗑</button>
-        </div>
-      </div>
-    </button>
-  `).join("");
+  list.innerHTML = sorted.map((chat, index) => ChatItem(chat, chat.id === currentChatId, index)).join("");
 
   list.querySelectorAll(".chat-item").forEach(btn => {
     btn.onclick = () => {
@@ -788,20 +811,6 @@ function renderChatList() {
     };
   });
 
-  list.querySelectorAll("[data-action='pin']").forEach(el => {
-    el.onclick = (e) => {
-      e.stopPropagation();
-      togglePinned(el.dataset.id);
-    };
-  });
-
-  list.querySelectorAll("[data-action='delete']").forEach(el => {
-    el.onclick = async (e) => {
-      e.stopPropagation();
-      const chat = chatsCache.find(c => c.id === el.dataset.id);
-      if (chat) await removeChat(chat);
-    };
-  });
 }
 
 function openChat(chat, subscribe = true) {
@@ -1334,4 +1343,4 @@ onAuthStateChanged(auth, async (user) => {
 
   await loadUserProfile(user);
   renderApp();
-});
+})
