@@ -37,6 +37,8 @@ let unsubscribeMessages = null;
 let pinnedChatIds = [];
 let activeChatFilter = "all";
 let pendingProfilePhotoURL = "";
+let isRegisteringFlow = false;
+let authNotice = "";
 const AI_BOTS = [
   {
     id: "oracle",
@@ -219,6 +221,7 @@ function InputBar() {
 }
 
 function showAuth(mode = "login", message = "") {
+  const finalMessage = message || authNotice || "После регистрации на почту придет письмо для подтверждения email.";
   app.innerHTML = `
     <div class="auth-wrap">
       <div class="auth-card glass">
@@ -240,7 +243,7 @@ function showAuth(mode = "login", message = "") {
             mode === "register"
               ? `
               <input id="nickname" placeholder="Ник" required>
-              <input id="torId" placeholder="TOR ID (например tornado_777)">
+              <input id="torId" placeholder="ID (например user_777)">
             `
               : ""
           }
@@ -249,7 +252,7 @@ function showAuth(mode = "login", message = "") {
           <button class="btn primary" type="submit">${mode === "register" ? "Создать аккаунт" : "Войти"}</button>
         </form>
 
-        <div class="status" id="auth-status">${message || "После регистрации на почту придет письмо для подтверждения email."}</div>
+        <div class="status" id="auth-status">${finalMessage}</div>
       </div>
     </div>
   `;
@@ -265,13 +268,14 @@ function showAuth(mode = "login", message = "") {
 
     try {
       if (mode === "register") {
+        isRegisteringFlow = true;
         const nickname = document.getElementById("nickname").value.trim();
         let torId = normalizeId(document.getElementById("torId").value.trim());
         if (!torId) torId = randomTorId(nickname || email.split("@")[0]);
 
         const idFree = await isTorIdFree(torId);
         if (!idFree) {
-          status.innerHTML = `<span class="danger">Этот TOR ID уже занят.</span>`;
+          status.innerHTML = `<span class="danger">Этот ID уже занят.</span>`;
           return;
         }
 
@@ -303,12 +307,16 @@ function showAuth(mode = "login", message = "") {
         await sendEmailVerification(cred.user);
 
         status.innerHTML = `<span class="success">Аккаунт создан. Проверь почту, подтверди email и потом входи.</span>`;
+        authNotice = "Аккаунт создан. Письмо для подтверждения отправлено. Проверь Входящие, Спам и Промоакции, затем войди.";
         await signOut(auth);
-        showAuth("login", "Аккаунт создан. Теперь войди после подтверждения email.");
+        isRegisteringFlow = false;
+        showAuth("login", authNotice);
       } else {
+        authNotice = "";
         await signInWithEmailAndPassword(auth, email, password);
       }
     } catch (err) {
+      isRegisteringFlow = false;
       status.innerHTML = `<span class="danger">${humanError(err)}</span>`;
     }
   };
@@ -434,6 +442,9 @@ function insertToMessageInput(text) {
 function renderChatArea(chat = null, messages = []) {
   const chatArea = document.getElementById("chat-area");
   const sendForm = document.getElementById("send-form");
+  const prevMessagesBox = document.getElementById("messages-box");
+  const wasNearBottom = !prevMessagesBox
+    || (prevMessagesBox.scrollHeight - prevMessagesBox.scrollTop - prevMessagesBox.clientHeight) < 120;
 
   if (!chat) {
     sendForm.classList.add("hidden");
@@ -476,7 +487,9 @@ function renderChatArea(chat = null, messages = []) {
   `;
 
   const box = document.getElementById("messages-box");
-  box.scrollTop = box.scrollHeight;
+  if (wasNearBottom) {
+    box.scrollTo({ top: box.scrollHeight, behavior: "smooth" });
+  }
   document.getElementById("chat-info-btn").onclick = () => openChatInfoModal(chat);
 }
 
@@ -663,7 +676,7 @@ async function openOrCreateAiChannel(bot) {
 
 async function generateAiReply(botId, userText) {
   const apiKey = getAiApiKey();
-  if (!apiKey) return "AI ключ не настроен. Добавь ключ в настройках TOR, и я буду отвечать полноценно.";
+  if (!apiKey) return "AI ключ не настроен. Добавь ключ в настройках, и я буду отвечать полноценно.";
   try {
     const prompt = `Ты AI-бот в мессенджере. Отвечай кратко, дружелюбно, по-русски. Твой id: ${botId}. Сообщение пользователя: ${userText}`;
     const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`, {
@@ -711,7 +724,7 @@ function handleSearch() {
   }).slice(0, 8);
 
   if (!users.length && !channels.length) {
-    resultsBox.innerHTML = `<div class="status search-empty">Ничего не найдено. Попробуй другой TOR ID или название канала.</div>`;
+    resultsBox.innerHTML = `<div class="status search-empty">Ничего не найдено. Попробуй другой ID или название канала.</div>`;
     return;
   }
 
@@ -890,8 +903,8 @@ function openCreateDialogModal() {
               <option value="channel">Канал</option>
             </select>
             <div id="dm-fields" class="stack">
-              <div class="muted">Введи TOR ID пользователя</div>
-              <input id="dm-id" placeholder="например tornado_777">
+              <div class="muted">Введи ID пользователя</div>
+              <input id="dm-id" placeholder="например user_777">
             </div>
             <div id="channel-fields" class="stack hidden">
               <input id="channel-title" placeholder="Название канала">
@@ -928,7 +941,7 @@ function openCreateDialogModal() {
     try {
       if (createType.value === "dm") {
         const torId = normalizeId(document.getElementById("dm-id").value.trim());
-        if (!torId) throw new Error("Введи TOR ID.");
+        if (!torId) throw new Error("Введи ID.");
 
         const snap = await getDocs(query(collection(db, "users"), where("torId", "==", torId)));
         if (snap.empty) throw new Error("Пользователь не найден.");
@@ -991,11 +1004,11 @@ function openProfileSettings() {
         <div class="block">
           <div class="stack">
             <input id="set-nickname" value="${escapeHtml(currentProfile?.nickname || "")}" placeholder="Ник">
-            <input id="set-torid" value="${escapeHtml(currentProfile?.torId || "")}" placeholder="TOR ID">
+            <input id="set-torid" value="${escapeHtml(currentProfile?.torId || "")}" placeholder="ID">
             <input id="set-avatar-file" type="file" accept="image/*">
             <textarea id="set-bio" placeholder="Описание профиля">${escapeHtml(currentProfile?.bio || "")}</textarea>
             <label class="check"><input id="set-search-name" type="checkbox" ${currentProfile?.privacy?.searchableByNickname !== false ? "checked" : ""}> Можно искать по нику</label>
-            <label class="check"><input id="set-search-id" type="checkbox" ${currentProfile?.privacy?.searchableById !== false ? "checked" : ""}> Можно искать по TOR ID</label>
+            <label class="check"><input id="set-search-id" type="checkbox" ${currentProfile?.privacy?.searchableById !== false ? "checked" : ""}> Можно искать по ID</label>
             <label class="check"><input id="set-dm" type="checkbox" ${currentProfile?.privacy?.allowDirectMessages !== false ? "checked" : ""}> Разрешить личные сообщения</label>
             <button id="save-profile-settings" class="btn primary">Сохранить профиль</button>
             <div id="profile-status" class="status">Здесь меняется только профиль аккаунта.</div>
@@ -1120,9 +1133,9 @@ async function saveProfileSettings() {
     const allowDirectMessages = document.getElementById("set-dm").checked;
 
     if (!nickname) throw new Error("Ник не может быть пустым.");
-    if (!torId) throw new Error("TOR ID не может быть пустым.");
+    if (!torId) throw new Error("ID не может быть пустым.");
     const free = await isTorIdFree(torId, uid());
-    if (!free) throw new Error("Этот TOR ID уже занят.");
+    if (!free) throw new Error("Этот ID уже занят.");
 
     await updateDoc(doc(db, "users", uid()), {
       nickname,
@@ -1332,15 +1345,19 @@ onAuthStateChanged(auth, async (user) => {
     currentChatId = null;
     if (unsubscribeChats) unsubscribeChats();
     if (unsubscribeMessages) unsubscribeMessages();
-    showAuth("login");
+    showAuth("login", authNotice);
     return;
   }
 
   if (!user.emailVerified) {
+    if (isRegisteringFlow) {
+      return;
+    }
     await showVerifyScreen(user);
     return;
   }
 
+  authNotice = "";
   await loadUserProfile(user);
   renderApp();
-})
+});
