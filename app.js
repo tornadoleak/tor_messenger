@@ -346,16 +346,17 @@ function renderApp() {
     <div class="app-shell">
       <aside class="inbox glass">
         <div class="sidebar-top">
-          <button id="profile-btn" class="profile-card mini elevated" title="Открыть профиль">
-            <div class="profile-left">
+          <div class="profile-card mini elevated">
+            <button id="profile-avatar-btn" class="profile-avatar-trigger" title="Открыть профиль" aria-label="Открыть профиль">
               ${cardAvatar(currentProfile?.photoURL, currentProfile?.nickname, true)}
+            </button>
+            <div class="profile-left">
               <div>
                 <strong>${escapeHtml(currentProfile?.nickname || "User")}</strong>
                 <div class="muted">@${escapeHtml(currentProfile?.torId || "")}</div>
               </div>
             </div>
-            <span class="pill-tag">Profile</span>
-          </button>
+          </div>
 
           <div class="inbox-head compact">
             <h2>Chats</h2>
@@ -393,7 +394,7 @@ function renderApp() {
     <div id="modal-root"></div>
   `;
 
-  document.getElementById("profile-btn").onclick = openProfileSettings;
+  document.getElementById("profile-avatar-btn").onclick = openProfileSettings;
   document.getElementById("settings-btn").onclick = openSettings;
   document.getElementById("create-btn").onclick = openCreateDialogModal;
   document.getElementById("search-btn").onclick = handleSearch;
@@ -1003,9 +1004,21 @@ function openProfileSettings() {
 
         <div class="block">
           <div class="stack">
+            <div class="profile-avatar-preview-wrap">
+              <div id="profile-avatar-preview" class="avatar profile-avatar-preview">
+                ${
+                  currentProfile?.photoURL
+                    ? `<img src="${escapeHtml(currentProfile.photoURL)}" alt="">`
+                    : `${escapeHtml(initials(currentProfile?.nickname || "User"))}`
+                }
+              </div>
+              <div class="muted">Предпросмотр аватара</div>
+            </div>
             <input id="set-nickname" value="${escapeHtml(currentProfile?.nickname || "")}" placeholder="Ник">
             <input id="set-torid" value="${escapeHtml(currentProfile?.torId || "")}" placeholder="ID">
-            <input id="set-avatar-file" type="file" accept="image/*">
+            <input id="set-avatar-file" class="hidden-file-input" type="file" accept="image/*">
+            <button id="pick-avatar-btn" class="btn file-trigger" type="button">Выбрать аватар</button>
+            <div id="avatar-file-name" class="muted">Файл не выбран</div>
             <textarea id="set-bio" placeholder="Описание профиля">${escapeHtml(currentProfile?.bio || "")}</textarea>
             <label class="check"><input id="set-search-name" type="checkbox" ${currentProfile?.privacy?.searchableByNickname !== false ? "checked" : ""}> Можно искать по нику</label>
             <label class="check"><input id="set-search-id" type="checkbox" ${currentProfile?.privacy?.searchableById !== false ? "checked" : ""}> Можно искать по ID</label>
@@ -1020,10 +1033,16 @@ function openProfileSettings() {
 
   document.getElementById("close-modal").onclick = closeModal;
   pendingProfilePhotoURL = currentProfile?.photoURL || "";
-  document.getElementById("set-avatar-file").onchange = async (e) => {
+  const avatarInput = document.getElementById("set-avatar-file");
+  const avatarFileName = document.getElementById("avatar-file-name");
+  const avatarPreview = document.getElementById("profile-avatar-preview");
+  document.getElementById("pick-avatar-btn").onclick = () => avatarInput.click();
+  avatarInput.onchange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    avatarFileName.textContent = file.name;
     pendingProfilePhotoURL = await fileToDataUrl(file);
+    avatarPreview.innerHTML = `<img src="${escapeHtml(pendingProfilePhotoURL)}" alt="">`;
   };
   document.getElementById("save-profile-settings").onclick = saveProfileSettings;
 }
