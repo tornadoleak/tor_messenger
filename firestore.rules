@@ -42,10 +42,19 @@ service cloud.firestore {
       allow read: if canReadChat(chatId);
 
       allow create: if canReadChat(chatId)
-        && request.resource.data.senderId == request.auth.uid
         && request.resource.data.text is string
         && request.resource.data.text.size() > 0
-        && request.resource.data.text.size() <= 3000;
+        && request.resource.data.text.size() <= 3000
+        && (
+          // normal user message
+          request.resource.data.senderId == request.auth.uid
+          ||
+          // AI bot message written by a chat participant
+          (
+            request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants
+            && request.resource.data.senderId.matches("ai_.*")
+          )
+        );
 
       allow update, delete: if false;
     }
