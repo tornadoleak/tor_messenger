@@ -39,6 +39,19 @@ let activeChatFilter = "all";
 let pendingProfilePhotoURL = "";
 let isRegisteringFlow = false;
 let authNotice = "";
+// ── Built-in AI key — every user gets AI out of the box ──
+const BUILTIN_AI_KEY = "AIzaSyDpMalqBn7r5pB82prKkdmbvtv9p4jsa6U";
+
+// Distinct personality prompt for each bot
+const BOT_PERSONAS = {
+  oracle: "Ты Oracle — аналитик трендов и стратегий в мессенджере TOR. Отвечай вдумчиво, структурированно. Давай конкретные, полезные инсайты. Пиши по-русски.",
+  nova:   "Ты Nova — креативный ассистент в мессенджере TOR. Отвечай живо, с энтузиазмом. Генерируй идеи, помогай с текстами и контентом. Пиши по-русски.",
+  cipher: "Ты Cipher — tech-эксперт в мессенджере TOR. Специализируешься на коде, инфраструктуре и системах. Отвечай точно, лаконично. Пиши по-русски."
+};
+
+// Snapshot of current chat messages — used for AI context
+let currentMessagesCache = [];
+
 const AI_BOTS = [
   {
     id: "oracle",
@@ -111,11 +124,16 @@ function getSavedTheme() {
 }
 
 function getAiApiKey() {
-  return localStorage.getItem("tor_ai_api_key") || "";
+  // Custom key overrides; built-in is always the fallback — no setup needed
+  return localStorage.getItem("tor_ai_api_key") || BUILTIN_AI_KEY;
 }
 
 function setAiApiKey(value) {
-  localStorage.setItem("tor_ai_api_key", value.trim());
+  if (value.trim()) {
+    localStorage.setItem("tor_ai_api_key", value.trim());
+  } else {
+    localStorage.removeItem("tor_ai_api_key"); // clears custom key → revert to built-in
+  }
 }
 
 function pickRecommendedBot() {
@@ -191,13 +209,19 @@ function MessageBubble(msg) {
 }
 
 function HeaderBar(chat) {
+  const isAi = !!chat.aiBotId;
+  const sub = isAi ? "AI · всегда онлайн"
+    : chat.type === "channel" ? "Канал · online" : "Личный чат · online";
   return `
     <div class="chat-head">
       <div class="chat-head-info">
         ${cardAvatar(chat.photoURL, chat.title, true)}
         <div>
-          <div><strong>${escapeHtml(chat.title)}</strong></div>
-          <div class="muted">${chat.type === "channel" ? "Канал" : "Личный чат"} · online now</div>
+          <div style="display:flex;align-items:center;gap:7px">
+            <strong>${escapeHtml(chat.title)}</strong>
+            ${isAi ? `<span class="pill-tag" style="font-size:10px;padding:2px 7px">AI</span>` : ""}
+          </div>
+          <div class="muted">${sub}</div>
         </div>
       </div>
       <div class="head-actions">
@@ -483,7 +507,7 @@ function renderChatArea(chat = null, messages = []) {
       <div id="messages-box" class="messages half">
         ${messagesMarkup}
       </div>
-      <div class="typing-indicator muted">typing indicator · silky motion enabled</div>
+      <div id="typing-indicator" class="typing-indicator muted"></div>
     </div>
   `;
 
@@ -675,21 +699,37 @@ async function openOrCreateAiChannel(bot) {
   });
 }
 
-async function generateAiReply(botId, userText) {
-  const apiKey = getAiApiKey();
-  if (!apiKey) return "AI ключ не настроен. Добавь ключ в настройках, и я буду отвечать полноценно.";
+async function generateAiReply(botId, userText, history = []) {
+  const apiKey = getAiApiKey(); // always has a value (built-in fallback)
+  const persona = BOT_PERSONAS[botId]
+    || "Ты AI-ассистент в мессенджере TOR. Отвечай кратко, дружелюбно, по-русски.";
+
+  // Last 8 messages as conversation context
+  const ctx = history.slice(-8).map(m => {
+    const isAi = String(m.senderId || "").startsWith("ai_");
+    return `${isAi ? "Ассистент" : "Пользователь"}: ${m.text}`;
+  }).join("\n");
+
+  const prompt = ctx
+    ? `${persona}\n\nИстория диалога:\n${ctx}\n\nПользователь: ${userText}\nАссистент:`
+    : `${persona}\n\nПользователь: ${userText}\nАссистент:`;
+
   try {
-    const prompt = `Ты AI-бот в мессенджере. Отвечай кратко, дружелюбно, по-русски. Твой id: ${botId}. Сообщение пользователя: ${userText}`;
-    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }]
-      })
-    });
-    if (!resp.ok) throw new Error("ai_error");
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.8, maxOutputTokens: 512 }
+        })
+      }
+    );
+    if (!resp.ok) throw new Error("api_error");
     const data = await resp.json();
-    return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "Я получил сообщение, но сейчас ответил слишком кратко.";
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    return text || "Получил сообщение, но ответ оказался пустым — попробуй переформулировать.";
   } catch {
     return "Сервис AI временно недоступен. Попробуй чуть позже.";
   }
@@ -838,6 +878,7 @@ function openChat(chat, subscribe = true) {
   const msgQuery = query(collection(db, "chats", chat.id, "messages"), orderBy("createdAt", "asc"));
   unsubscribeMessages = onSnapshot(msgQuery, (snap) => {
     const messages = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    currentMessagesCache = messages; // keep for AI context
     renderChatArea(chat, messages);
   });
 }
@@ -1069,7 +1110,8 @@ function openSettings() {
               <label class="check"><input id="set-liquid" type="checkbox" ${currentProfile?.preferences?.liquidGlass !== false ? "checked" : ""}> Liquid glass эффект</label>
               <label class="check"><input id="set-anim" type="checkbox" ${currentProfile?.preferences?.smoothAnimations !== false ? "checked" : ""}> Плавные анимации</label>
               <label class="check"><input id="set-compact" type="checkbox" ${currentProfile?.preferences?.compactMode ? "checked" : ""}> Компактный режим</label>
-              <input id="set-ai-key" value="${escapeHtml(getAiApiKey())}" placeholder="AI API key (локально)">
+              <input id="set-ai-key" value="${escapeHtml(localStorage.getItem("tor_ai_api_key") || "")}" placeholder="Свой Gemini ключ (необязательно)">
+              <div class="muted" style="font-size:11px;margin-top:-2px">AI работает без ключа. Поле — для замены на собственный.</div>
             </div>
           </div>
 
@@ -1232,6 +1274,9 @@ async function sendMessage(e) {
   const currentChat = chatsCache.find(c => c.id === currentChatId);
   if (!currentChat) return;
 
+  input.value = "";
+  input.disabled = true;
+
   await addDoc(collection(db, "chats", currentChatId, "messages"), {
     text,
     senderId: uid(),
@@ -1245,20 +1290,33 @@ async function sendMessage(e) {
   });
 
   if (currentChat?.aiBotId) {
-    const aiText = await generateAiReply(currentChat.aiBotId, text);
+    // Show animated typing indicator
+    const typingEl = document.getElementById("typing-indicator");
+    if (typingEl) {
+      typingEl.innerHTML = `<span class="muted">${escapeHtml(currentChat.title)} печатает</span><span class="dots"><span></span><span></span><span></span></span>`;
+      typingEl.classList.add("active");
+    }
+
+    const aiText = await generateAiReply(currentChat.aiBotId, text, currentMessagesCache);
+
     await addDoc(collection(db, "chats", currentChatId, "messages"), {
       text: aiText,
       senderId: `ai_${currentChat.aiBotId}`,
-      senderName: `${currentChat.title}`,
+      senderName: currentChat.title,
       createdAt: serverTimestamp()
     });
     await updateDoc(doc(db, "chats", currentChatId), {
       lastMessageText: aiText.slice(0, 120),
       updatedAt: serverTimestamp()
     });
+
+    // Hide indicator (snapshot re-render will also clear it)
+    const typingEl2 = document.getElementById("typing-indicator");
+    if (typingEl2) { typingEl2.innerHTML = ""; typingEl2.classList.remove("active"); }
   }
 
-  input.value = "";
+  input.disabled = false;
+  input.focus();
 }
 
 function closeModal() {
